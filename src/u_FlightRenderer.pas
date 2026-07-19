@@ -498,6 +498,7 @@ begin
         aThrustOffset.Y + Len
       );
       aCanvas.DrawOval(Rect, Paint);
+
     end;
 
     // RCS puffs: draw when rotating with RCS fuel available.

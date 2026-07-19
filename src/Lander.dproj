@@ -140,6 +140,8 @@
         <DCCReference Include="u_Landing.pas"/>
         <DCCReference Include="u_Scoring.pas"/>
         <DCCReference Include="u_FlightRenderer.pas"/>
+        <DCCReference Include="u_MenuScene.pas"/>
+        <DCCReference Include="u_Serialization.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

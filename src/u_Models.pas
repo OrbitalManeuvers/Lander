@@ -1,4 +1,4 @@
-unit u_Models;
+﻿unit u_Models;
 
 interface
 
@@ -20,7 +20,6 @@ type
   TLandingCriteria = record
     MaxSpeed: Single;      // Maximum resultant velocity magnitude
     MaxAngle: Single;      // Maximum deviation from vertical (degrees)
-    RequiresGear: Boolean; // Whether gear must be deployed
     MustBeOnPad: Boolean;  // Whether contact must be on a pad segment
   end;
 
@@ -39,14 +38,13 @@ type
     Thrust: Single;         // Current throttle level (0.0 = off, 1.0 = full)
     RotatingLeft: Boolean;  // RCS firing left (counter-clockwise)
     RotatingRight: Boolean; // RCS firing right (clockwise)
-    GearDeployed: Boolean;  // Landing gear state
     SASActive: Boolean;     // Stability assist active
     Alive: Boolean;         // Craft not yet crashed
   end;
 
   // Instrument type identifiers for the control panel.
   TInstrumentKind = (ikFuelGauge, ikRCSGauge, ikVelocity, ikAltimeter,
-    ikAttitude, ikSASIndicator, ikGearIndicator);
+    ikAttitude, ikSASIndicator);
 
   // Instrument descriptor for panel layout.
   TInstrument = record
@@ -90,7 +88,6 @@ type
     fRCSThrust: Single;
     fPlumeColor: TAlphaColor;
     fHasSAS: Boolean;
-    fHasRetractableGear: Boolean;
     fHasThrottleControl: Boolean;
     fInstruments: TInstrumentArray;
   public
@@ -111,7 +108,6 @@ type
     property RCSThrust: Single read fRCSThrust write fRCSThrust;
     property PlumeColor: TAlphaColor read fPlumeColor write fPlumeColor;
     property HasSAS: Boolean read fHasSAS write fHasSAS;
-    property HasRetractableGear: Boolean read fHasRetractableGear write fHasRetractableGear;
     property HasThrottleControl: Boolean read fHasThrottleControl write fHasThrottleControl;
     property Instruments: TInstrumentArray read fInstruments write fInstruments;
   end;

@@ -65,18 +65,6 @@ begin
     Result.FailAngle := True;
     Result.Success := False;
   end;
-
-  // Check gear deployment (Property 7).
-  // If the craft has retractable gear and criteria requires gear deployed,
-  // retracted gear = crash regardless of speed/angle.
-  if aCriteria.RequiresGear and aHasRetractableGear then
-  begin
-    if not aState.GearDeployed then
-    begin
-      Result.FailGear := True;
-      Result.Success := False;
-    end;
-  end;
 end;
 
 end.
