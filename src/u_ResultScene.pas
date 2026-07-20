@@ -154,17 +154,45 @@ begin
     TextY := aHeight * 0.25;
     aCanvas.DrawSimpleText('CRASH!', TextX, TextY, Font, Paint);
 
-    // Failure message
+    // Failure message with reasons
     Typeface := TSkTypeface.MakeFromName('Consolas', TSkFontStyle.Normal);
     Font := TSkFont.Create(Typeface, 28);
     Paint := TSkPaint.Create;
     Paint.AntiAlias := True;
     Paint.Color := TAlphaColors.White;
 
-    TextY := aHeight * 0.42;
-    Font.MeasureText('Mission Failed', TextBounds, Paint);
-    TextX := (aWidth - TextBounds.Width) / 2;
-    aCanvas.DrawSimpleText('Mission Failed', TextX, TextY, Font, Paint);
+    TextY := aHeight * 0.40;
+
+    if fOutcome.FailSpeed then
+    begin
+      Font.MeasureText('Too fast!', TextBounds, Paint);
+      TextX := (aWidth - TextBounds.Width) / 2;
+      aCanvas.DrawSimpleText('Too fast!', TextX, TextY, Font, Paint);
+      TextY := TextY + aHeight * 0.08;
+    end;
+
+    if fOutcome.FailAngle then
+    begin
+      Font.MeasureText('Bad angle!', TextBounds, Paint);
+      TextX := (aWidth - TextBounds.Width) / 2;
+      aCanvas.DrawSimpleText('Bad angle!', TextX, TextY, Font, Paint);
+      TextY := TextY + aHeight * 0.08;
+    end;
+
+    if fOutcome.FailPad then
+    begin
+      Font.MeasureText('Missed the pad!', TextBounds, Paint);
+      TextX := (aWidth - TextBounds.Width) / 2;
+      aCanvas.DrawSimpleText('Missed the pad!', TextX, TextY, Font, Paint);
+      TextY := TextY + aHeight * 0.08;
+    end;
+
+    if (not fOutcome.FailSpeed) and (not fOutcome.FailAngle) and (not fOutcome.FailPad) then
+    begin
+      Font.MeasureText('Mission Failed', TextBounds, Paint);
+      TextX := (aWidth - TextBounds.Width) / 2;
+      aCanvas.DrawSimpleText('Mission Failed', TextX, TextY, Font, Paint);
+    end;
   end;
 
   // 3. Navigation prompt

@@ -70,6 +70,9 @@ type
   // Outcome data from a play session, passed to the result scene.
   TPlayOutcome = record
     Success: Boolean;        // True = landed, False = crashed
+    FailSpeed: Boolean;      // Crash reason: too fast
+    FailAngle: Boolean;      // Crash reason: too tilted
+    FailPad: Boolean;        // Crash reason: not on a pad
     PadPoints: Integer;      // Points from pad (0 if crash or off-pad)
     FuelBonus: Integer;      // Fuel bonus (0 if crash)
     TotalScore: Integer;     // Sum of all scoring

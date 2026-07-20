@@ -18,6 +18,7 @@ type
     fViewport: TViewport;
     fTime: Single;
     fCameraX: Single;  // Current camera center X (lazy-follows craft)
+    fZoomedIn: Boolean;  // True = landing view, False = full terrain view
     fOutcome: TPlayOutcome;
 
     procedure InitCraftState;
@@ -188,6 +189,9 @@ begin
 
       fOutcome := Default(TPlayOutcome);
       fOutcome.Success := False;
+      fOutcome.FailSpeed := Landing.FailSpeed;
+      fOutcome.FailAngle := Landing.FailAngle;
+      fOutcome.FailPad := Landing.FailPad;
       fOutcome.PadPoints := 0;
       fOutcome.FuelBonus := 0;
       fOutcome.TotalScore := 0;
@@ -201,58 +205,57 @@ end;
 
 procedure TPlayScene.Render(const aCanvas: ISkCanvas; aWidth, aHeight: Integer);
 const
-  MinViewHeight = 400.0;  // Minimum viewport height (prevents over-zoom near ground)
-  Margin = 30.0;          // Breathing room above the craft
-  TargetAspect = 3.0 / 2.0;  // Match the 3:2 letterbox aspect
+  // Altitude threshold: below this → zoomed in, above this → zoomed out.
+  ZoomInAltitude = 150.0;
+  ZoomOutAltitude = 300.0;
+  // Zoomed-in view height in world units.
+  LandingViewHeight = 400.0;
+  TargetAspect = 3.0 / 2.0;
+  Margin = 30.0;  // Breathing room above craft in zoomed-in mode
 var
   TerrainVP: TViewport;
-  ViewTop: Single;
-  ViewHeight: Single;
-  ViewWidth: Single;
-  DeadzoneMargin: Single;
+  Altitude: Single;
+  ViewWidth, ViewHeight: Single;
 begin
-  // Get terrain bounds as baseline.
+  // Get terrain bounds as baseline (used for zoomed-out mode).
   TerrainVP := fRenderer.ViewportFromTerrain(
     fScenario.World.Terrain, Single(aWidth), Single(aHeight));
 
-  // Viewport top tracks the craft position (with margin above).
-  ViewTop := fCraftState.Y - Margin;
+  // Calculate altitude above terrain.
+  Altitude := CalcAltitude(fCraftState.X, fCraftState.Y, fScenario.World);
+  if Altitude < 0 then
+    Altitude := 9999;  // No terrain below — treat as high altitude
 
-  // Enforce minimum viewport height so we don't over-zoom near the surface.
-  ViewHeight := TerrainVP.ViewBottom - ViewTop;
-  if ViewHeight < MinViewHeight then
+  // Determine view mode based on altitude.
+  if not fZoomedIn then
   begin
-    ViewTop := TerrainVP.ViewBottom - MinViewHeight;
-    ViewHeight := MinViewHeight;
-  end;
-
-  // Compute viewport width to maintain the 3:2 aspect ratio.
-  // This narrows the horizontal view as the craft descends (zoom effect).
-  ViewWidth := ViewHeight * TargetAspect;
-
-  // If computed width exceeds terrain width, use full terrain width instead.
-  // Craft moves freely on screen without terrain scrolling.
-  if ViewWidth >= (TerrainVP.ViewRight - TerrainVP.ViewLeft) then
-  begin
-    fViewport.ViewLeft := TerrainVP.ViewLeft;
-    fViewport.ViewRight := TerrainVP.ViewRight;
+    // Currently zoomed out — switch to zoomed in when close to ground.
+    if Altitude < ZoomInAltitude then
+      fZoomedIn := True;
   end
   else
   begin
-    // Deadzone camera: only pan when craft reaches the outer 1/8 of the view.
-    // The camera stays still while craft moves within the middle 75%.
-    DeadzoneMargin := ViewWidth * 0.125;  // 1/8 of view width on each side
+    // Currently zoomed in — switch back to zoomed out when high enough.
+    if Altitude > ZoomOutAltitude then
+      fZoomedIn := False;
+  end;
 
-    // Check if craft would exit the comfortable zone and nudge camera.
-    if fCraftState.X < (fCameraX - ViewWidth / 2 + DeadzoneMargin) then
-      fCameraX := fCraftState.X + ViewWidth / 2 - DeadzoneMargin
-    else if fCraftState.X > (fCameraX + ViewWidth / 2 - DeadzoneMargin) then
-      fCameraX := fCraftState.X - ViewWidth / 2 + DeadzoneMargin;
+  if not fZoomedIn then
+  begin
+    // MODE 1: Zoomed Out — entire terrain visible, no camera movement.
+    fViewport := TerrainVP;
+  end
+  else
+  begin
+    // MODE 2: Zoomed In (Landing) — craft centered, terrain scrolls.
+    ViewHeight := LandingViewHeight;
+    ViewWidth := ViewHeight * TargetAspect;
 
-    fViewport.ViewLeft := fCameraX - ViewWidth / 2;
-    fViewport.ViewRight := fCameraX + ViewWidth / 2;
+    // Center on craft horizontally.
+    fViewport.ViewLeft := fCraftState.X - ViewWidth / 2;
+    fViewport.ViewRight := fCraftState.X + ViewWidth / 2;
 
-    // Clamp so we don't scroll past terrain edges.
+    // Clamp to terrain edges.
     if fViewport.ViewLeft < TerrainVP.ViewLeft then
     begin
       fViewport.ViewLeft := TerrainVP.ViewLeft;
@@ -263,10 +266,16 @@ begin
       fViewport.ViewRight := TerrainVP.ViewRight;
       fViewport.ViewLeft := TerrainVP.ViewRight - ViewWidth;
     end;
+
+    // Vertical: anchor bottom to terrain bottom, top tracks craft.
+    fViewport.ViewBottom := TerrainVP.ViewBottom;
+    fViewport.ViewTop := fCraftState.Y - Margin;
+
+    // Enforce minimum view height so terrain stays visible.
+    if (fViewport.ViewBottom - fViewport.ViewTop) < ViewHeight then
+      fViewport.ViewTop := fViewport.ViewBottom - ViewHeight;
   end;
 
-  fViewport.ViewTop := ViewTop;
-  fViewport.ViewBottom := TerrainVP.ViewBottom;
   fViewport.ScreenWidth := Single(aWidth);
   fViewport.ScreenHeight := Single(aHeight);
 

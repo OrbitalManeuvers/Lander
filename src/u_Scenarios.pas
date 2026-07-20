@@ -54,14 +54,14 @@ begin
   // --- Build World Profile ---
   Result.World := TWorldProfile.Create;
   Result.World.Name := 'The Moon';
-  Result.World.Gravity := 0.4;
+  Result.World.Gravity := 0.7;
   Result.World.Wind := 0;
   Result.World.TerrainColor := $FFB0B0B0;  // Light gray lunar surface
   Result.World.PadColor := $FF00E060;       // Bright green pads
 
   // Terrain polyline: ~1000 units wide, jagged lunar surface with 2 pads.
   // Y increases downward; terrain sits in the 850–950 range.
-  SetLength(Terrain, 20);
+  SetLength(Terrain, 22);
   Terrain[0]  := PointF(0, 900);
   Terrain[1]  := PointF(60, 880);
   Terrain[2]  := PointF(120, 920);
@@ -86,6 +86,10 @@ begin
   Terrain[17] := PointF(950, 920);
   Terrain[18] := PointF(980, 900);
   Terrain[19] := PointF(1000, 880);
+
+  Terrain[20] := PointF(1200, 940);
+  Terrain[21] := PointF(1200, 940);
+
 
   Result.World.Terrain := Terrain;
 
@@ -173,12 +177,12 @@ begin
 
   // Physics parameters
   Result.Craft.Mass := 1.0;
-  Result.Craft.ThrustPower := 1.5;
+  Result.Craft.ThrustPower := 2.8;
   Result.Craft.FuelCapacity := 100;
   Result.Craft.BurnRate := 0.3;
   Result.Craft.RCSFuelCapacity := 50;
   Result.Craft.RCSBurnRate := 0.2;
-  Result.Craft.RCSThrust := 0.03;
+  Result.Craft.RCSThrust := 0.5;
   Result.Craft.HasSAS := True;
   Result.Craft.HasThrottleControl := True;
 
@@ -211,10 +215,10 @@ begin
 
   // --- Start Conditions ---
   Result.Start.X := 0;    // Center of terrain
-  Result.Start.Y := 600;    // Just above terrain (terrain starts ~880)
-  Result.Start.VX := 2.2;
+  Result.Start.Y := 400;    // Just above terrain (terrain starts ~880)
+  Result.Start.VX := 20.2;
   Result.Start.VY := 0;
-  Result.Start.Angle := 0;  // Pointing up
+  Result.Start.Angle := -90;
 end;
 
 end.

@@ -2,8 +2,8 @@ object MainForm: TMainForm
   Left = 0
   Top = 0
   Caption = 'Lander'
-  ClientHeight = 604
-  ClientWidth = 1106
+  ClientHeight = 883
+  ClientWidth = 1431
   Color = 2236962
   Font.Charset = DEFAULT_CHARSET
   Font.Color = clWindowText
@@ -21,8 +21,8 @@ object MainForm: TMainForm
     AlignWithMargins = True
     Left = 245
     Top = 4
-    Width = 857
-    Height = 596
+    Width = 1182
+    Height = 875
     Margins.Left = 4
     Margins.Top = 4
     Margins.Right = 4
@@ -30,19 +30,22 @@ object MainForm: TMainForm
     Align = alClient
     BackendRender = HardwareAcceleration
     OnAnimationDraw = PBFlightAnimationDraw
+    ExplicitWidth = 857
+    ExplicitHeight = 596
   end
   object PBPanel: TSkAnimatedPaintBox
     AlignWithMargins = True
     Left = 4
     Top = 4
     Width = 233
-    Height = 596
+    Height = 875
     Margins.Left = 4
     Margins.Top = 4
     Margins.Right = 4
     Margins.Bottom = 4
     Align = alLeft
     OnAnimationDraw = PBPanelAnimationDraw
+    ExplicitHeight = 596
   end
   object GameTimer: TTimer
     Enabled = False

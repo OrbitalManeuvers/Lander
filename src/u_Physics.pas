@@ -102,6 +102,12 @@ begin
   // --- Integrate angular velocity into angle ---
   State.Angle := State.Angle + State.AngularVel * Delta;
 
+  // Normalize angle to [-Pi, Pi]
+  while State.Angle > Pi do
+    State.Angle := State.Angle - 2 * Pi;
+  while State.Angle < -Pi do
+    State.Angle := State.Angle + 2 * Pi;
+
   // --- Integrate velocity into position ---
   State.X := State.X + State.VX * Delta;
   State.Y := State.Y + State.VY * Delta;

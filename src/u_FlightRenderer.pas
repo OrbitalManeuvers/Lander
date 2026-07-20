@@ -22,6 +22,7 @@ type
     fEffect: ISkRuntimeEffect;
     fTerrainPath: ISkPath;       // Cached full terrain polyline (world coords)
     fPadPaths: array of ISkPath; // Cached pad segment paths (world coords)
+    fPlumeRamp: Single;          // 0..1, ramps up while thrusting for grow-in effect
 
     // Builds a Skia matrix that maps world coordinates to screen coordinates.
     function BuildWorldToScreenMatrix(const aViewport: TViewport): TMatrix;
@@ -416,7 +417,7 @@ begin
 
   // Fill entire canvas with black (provides the letterbox/pillarbox bars).
   Paint := TSkPaint.Create;
-  Paint.Color := TAlphaColors.Black;
+  Paint.Color := TAlphaColors.Darkslateblue;
   Paint.Style := TSkPaintStyle.Fill;
   aCanvas.DrawRect(RectF(0, 0, aCanvasWidth, aCanvasHeight), Paint);
 
@@ -475,12 +476,15 @@ begin
     // Main engine plume: draw when thrusting with fuel available.
     if (aState.Thrust > 0) and (aState.Fuel > 0) then
     begin
+      // Ramp up plume size over ~30 frames for grow-in effect.
+      fPlumeRamp := Min(fPlumeRamp + 0.03, 1.0);
+
       Paint := TSkPaint.Create;
       Paint.Style := TSkPaintStyle.Fill;
       Paint.AntiAlias := True;
 
-      // Scale plume size proportional to throttle level.
-      Scale := 0.4 + 0.6 * aState.Thrust;
+      // Scale plume size: ramp * throttle level.
+      Scale := fPlumeRamp * (0.4 + 0.6 * aState.Thrust);
 
       // Use profile-defined plume dimensions.
       BaseLen := aPlumeLength * Scale;
@@ -522,6 +526,11 @@ begin
       );
       aCanvas.DrawOval(Rect, Paint);
 
+    end
+    else
+    begin
+      // Thrust off — reset ramp so next firing starts small.
+      fPlumeRamp := 0;
     end;
 
     // RCS puffs: draw when rotating with RCS fuel available.
