@@ -52,7 +52,7 @@ type
 implementation
 
 uses
-  u_MenuScene, u_PlayScene, u_Scenarios;
+  u_MenuScene, u_PlayScene, u_ResultScene, u_Scenarios;
 
 { TSceneManager }
 
@@ -107,7 +107,15 @@ begin
 end;
 
 procedure TSceneManager.TransitionToScene(aSceneID: TSceneID);
+var
+  Outcome: TPlayOutcome;
 begin
+  // Extract outcome from play scene before destroying it
+  if (aSceneID = sidResult) and (fCurrentScene is TPlayScene) then
+    Outcome := TPlayScene(fCurrentScene).Outcome
+  else
+    Outcome := Default(TPlayOutcome);
+
   // Destroy current scene (screen is guaranteed black at this point)
   FreeAndNil(fCurrentScene);
 
@@ -115,7 +123,16 @@ begin
   ApplyLayout(GetSceneLayout(aSceneID));
 
   // Create and activate the new scene
-  fCurrentScene := CreateScene(aSceneID);
+  case aSceneID of
+    sidMenu:
+      fCurrentScene := TMenuScene.Create;
+    sidPlay:
+      fCurrentScene := TPlayScene.Create(TScenarioBuilder.BuildDefault);
+    sidResult:
+      fCurrentScene := TResultScene.Create(Outcome);
+  else
+    fCurrentScene := nil;
+  end;
 end;
 
 function TSceneManager.GetSceneLayout(aSceneID: TSceneID): TLayoutMode;
@@ -147,8 +164,10 @@ begin
       Result := TMenuScene.Create;
     sidPlay:
       Result := TPlayScene.Create(TScenarioBuilder.BuildDefault);
+    sidResult:
+      // Result scene requires an outcome — use default (empty) when called generically.
+      Result := TResultScene.Create(Default(TPlayOutcome));
   else
-    // Placeholder for other scenes — will be added in later tasks.
     Result := nil;
   end;
 end;

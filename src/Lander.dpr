@@ -14,7 +14,8 @@ uses
   u_MenuScene in 'u_MenuScene.pas',
   u_Serialization in 'u_Serialization.pas',
   u_Scenarios in 'u_Scenarios.pas',
-  u_PlayScene in 'u_PlayScene.pas';
+  u_PlayScene in 'u_PlayScene.pas',
+  u_ResultScene in 'u_ResultScene.pas';
 
 {$R *.res}
 

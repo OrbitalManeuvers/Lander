@@ -18,6 +18,7 @@ type
     fViewport: TViewport;
     fTime: Single;
     fCameraX: Single;  // Current camera center X (lazy-follows craft)
+    fOutcome: TPlayOutcome;
 
     procedure InitCraftState;
     function GetTransformedHull: TPointFArray;
@@ -28,6 +29,8 @@ type
     procedure HandleInput(aKeyCode: Word; aKeyState: TKeyState); override;
     procedure Tick; override;
     procedure Render(const aCanvas: ISkCanvas; aWidth, aHeight: Integer); override;
+
+    property Outcome: TPlayOutcome read fOutcome;
   end;
 
 implementation
@@ -152,19 +155,44 @@ begin
 
     if Landing.Success then
     begin
-      // Successful landing — award score and signal result
+      // Successful landing — compute outcome and award score
+      fOutcome := Default(TPlayOutcome);
+      fOutcome.Success := True;
+
+      if Contact.IsPad and (Contact.PadIndex >= 0) then
+        fOutcome.PadPoints := fScenario.World.Pads[Contact.PadIndex].PointValue
+      else
+        fOutcome.PadPoints := 0;
+
+      if fScenario.Craft.FuelCapacity > 0 then
+        fOutcome.FuelBonus := Round(fCraftState.Fuel / fScenario.Craft.FuelCapacity * 100)
+      else
+        fOutcome.FuelBonus := 0;
+
+      fOutcome.TotalScore := fOutcome.PadPoints + fOutcome.FuelBonus;
+
       if Contact.IsPad and (Contact.PadIndex >= 0) then
         fScoreKeeper.AwardLanding(
           fScenario.World.Pads[Contact.PadIndex].PointValue,
           fCraftState.Fuel,
           fScenario.Craft.FuelCapacity);
+
+      fOutcome.LivesRemaining := fScoreKeeper.Lives;
       fCraftState.Alive := False;
       SetFinished(sidResult);
     end
     else
     begin
-      // Crash — decrement lives
+      // Crash — decrement lives and compute outcome
       fScoreKeeper.ApplyCrash;
+
+      fOutcome := Default(TPlayOutcome);
+      fOutcome.Success := False;
+      fOutcome.PadPoints := 0;
+      fOutcome.FuelBonus := 0;
+      fOutcome.TotalScore := 0;
+      fOutcome.LivesRemaining := fScoreKeeper.Lives;
+
       fCraftState.Alive := False;
       SetFinished(sidResult);
     end;

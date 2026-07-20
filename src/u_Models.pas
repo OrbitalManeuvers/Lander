@@ -67,6 +67,15 @@ type
 
   TPointFArray = array of TPointF;
 
+  // Outcome data from a play session, passed to the result scene.
+  TPlayOutcome = record
+    Success: Boolean;        // True = landed, False = crashed
+    PadPoints: Integer;      // Points from pad (0 if crash or off-pad)
+    FuelBonus: Integer;      // Fuel bonus (0 if crash)
+    TotalScore: Integer;     // Sum of all scoring
+    LivesRemaining: Integer; // Lives after this outcome
+  end;
+
   // Static definition of a craft's characteristics.
   // Loaded once, never mutated during play.
   TCraftProfile = class
