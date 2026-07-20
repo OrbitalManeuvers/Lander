@@ -13,7 +13,8 @@ uses
   u_FlightRenderer in 'u_FlightRenderer.pas',
   u_MenuScene in 'u_MenuScene.pas',
   u_Serialization in 'u_Serialization.pas',
-  u_Scenarios in 'u_Scenarios.pas';
+  u_Scenarios in 'u_Scenarios.pas',
+  u_PlayScene in 'u_PlayScene.pas';
 
 {$R *.res}
 

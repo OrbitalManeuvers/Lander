@@ -142,6 +142,8 @@
         <DCCReference Include="u_FlightRenderer.pas"/>
         <DCCReference Include="u_MenuScene.pas"/>
         <DCCReference Include="u_Serialization.pas"/>
+        <DCCReference Include="u_Scenarios.pas"/>
+        <DCCReference Include="u_PlayScene.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

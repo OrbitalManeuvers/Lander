@@ -60,32 +60,32 @@ begin
   Result.World.PadColor := $FF00E060;       // Bright green pads
 
   // Terrain polyline: ~1000 units wide, jagged lunar surface with 2 pads.
-  // Y increases downward; terrain sits in the 600–800 range.
+  // Y increases downward; terrain sits in the 850–950 range.
   SetLength(Terrain, 20);
-  Terrain[0]  := PointF(0, 700);
-  Terrain[1]  := PointF(60, 680);
-  Terrain[2]  := PointF(120, 720);
-  Terrain[3]  := PointF(200, 690);
-  Terrain[4]  := PointF(280, 710);
+  Terrain[0]  := PointF(0, 900);
+  Terrain[1]  := PointF(60, 880);
+  Terrain[2]  := PointF(120, 920);
+  Terrain[3]  := PointF(200, 890);
+  Terrain[4]  := PointF(280, 910);
   // Pad 1: large easy pad (indices 5–7)
-  Terrain[5]  := PointF(350, 750);
-  Terrain[6]  := PointF(420, 750);
-  Terrain[7]  := PointF(490, 750);
+  Terrain[5]  := PointF(350, 940);
+  Terrain[6]  := PointF(420, 940);
+  Terrain[7]  := PointF(490, 940);
   // Continue terrain
-  Terrain[8]  := PointF(540, 720);
-  Terrain[9]  := PointF(600, 690);
-  Terrain[10] := PointF(650, 730);
-  Terrain[11] := PointF(700, 710);
-  Terrain[12] := PointF(740, 740);
+  Terrain[8]  := PointF(540, 910);
+  Terrain[9]  := PointF(600, 880);
+  Terrain[10] := PointF(650, 920);
+  Terrain[11] := PointF(700, 900);
+  Terrain[12] := PointF(740, 930);
   // Pad 2: small hard pad (indices 13–14)
-  Terrain[13] := PointF(780, 760);
-  Terrain[14] := PointF(830, 760);
+  Terrain[13] := PointF(780, 950);
+  Terrain[14] := PointF(830, 950);
   // Continue terrain
-  Terrain[15] := PointF(870, 720);
-  Terrain[16] := PointF(910, 700);
-  Terrain[17] := PointF(950, 730);
-  Terrain[18] := PointF(980, 710);
-  Terrain[19] := PointF(1000, 690);
+  Terrain[15] := PointF(870, 910);
+  Terrain[16] := PointF(910, 890);
+  Terrain[17] := PointF(950, 920);
+  Terrain[18] := PointF(980, 900);
+  Terrain[19] := PointF(1000, 880);
 
   Result.World.Terrain := Terrain;
 
@@ -107,7 +107,7 @@ begin
   Pivot := PointF(14, 22.5);
 
   // Hull parts (authored in grid space, pivot-centered automatically)
-  SetLength(HullParts, 3);
+  SetLength(HullParts, 4);
 
   // Part 0: Main body outline
   Part.Path := BuildCraftPath([
@@ -133,7 +133,7 @@ begin
   Part.StrokeWidth := 0;
   HullParts[1] := Part;
 
-  // Part 2: Landing legs
+  // Part 2: Left landing leg
   Part.Path := BuildCraftPath([
     PointF(4, 38),
     PointF(0, 45),
@@ -143,6 +143,17 @@ begin
   Part.Style := TSkPaintStyle.Stroke;
   Part.StrokeWidth := 1.5;
   HullParts[2] := Part;
+
+  // Part 3: Right landing leg
+  Part.Path := BuildCraftPath([
+    PointF(24, 38),
+    PointF(28, 45),
+    PointF(22, 45)
+  ], Pivot, False);
+  Part.Color := $FF808080;  // Dark gray
+  Part.Style := TSkPaintStyle.Stroke;
+  Part.StrokeWidth := 1.5;
+  HullParts[3] := Part;
 
   Result.Craft.HullParts := HullParts;
 
@@ -162,7 +173,7 @@ begin
 
   // Physics parameters
   Result.Craft.Mass := 1.0;
-  Result.Craft.ThrustPower := 0.15;
+  Result.Craft.ThrustPower := 1.5;
   Result.Craft.FuelCapacity := 100;
   Result.Craft.BurnRate := 0.3;
   Result.Craft.RCSFuelCapacity := 50;
@@ -182,15 +193,26 @@ begin
     PointF(2, 18)
   ], Pivot, True);
 
+  // Collision points: same vertices as collision path, pivot-centered.
+  // Used directly by the play scene for hull collision testing.
+  Result.Craft.CollisionPoints := TPointFArray.Create(
+    PivotOffset(PointF(14, 0), Pivot),
+    PivotOffset(PointF(26, 18), Pivot),
+    PivotOffset(PointF(24, 38), Pivot),
+    PivotOffset(PointF(28, 45), Pivot),
+    PivotOffset(PointF(0, 45), Pivot),
+    PivotOffset(PointF(4, 38), Pivot),
+    PivotOffset(PointF(2, 18), Pivot));
+
   // --- Landing Criteria ---
   Result.Criteria.MaxSpeed := 3.0;
   Result.Criteria.MaxAngle := 15.0;   // Degrees
   Result.Criteria.MustBeOnPad := True;
 
   // --- Start Conditions ---
-  Result.Start.X := 500;    // Center of terrain
-  Result.Start.Y := 100;    // Well above terrain
-  Result.Start.VX := 0;
+  Result.Start.X := 0;    // Center of terrain
+  Result.Start.Y := 600;    // Just above terrain (terrain starts ~880)
+  Result.Start.VX := 2.2;
   Result.Start.VY := 0;
   Result.Start.Angle := 0;  // Pointing up
 end;

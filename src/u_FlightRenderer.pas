@@ -37,8 +37,9 @@ type
       aScreenWidth, aScreenHeight: Single): TViewport;
 
     // Draws fullscreen procedural starfield behind all other elements.
+    // aHorizon: screen Y below which stars fade out. Pass 9999 for full-screen stars.
     procedure RenderStarfield(const aCanvas: ISkCanvas; aWidth, aHeight: Integer;
-      aTime: Single);
+      aTime: Single; aHorizon: Single = 9999);
 
     // Draws cached terrain polyline and pad segments using canvas matrix transform.
     procedure RenderTerrain(const aCanvas: ISkCanvas; const aViewport: TViewport;
@@ -74,6 +75,7 @@ const
   CStarfieldShader =
     'uniform float2 uResolution;'#10 +
     'uniform float uTime;'#10 +
+    'uniform float uHorizon;'#10 +
     #10 +
     '// Simple hash for deterministic pseudo-random per grid cell'#10 +
     'float hash(float2 p) {'#10 +
@@ -126,6 +128,10 @@ const
     '  float falloff = 1.0 - (dist / radius);'#10 +
     '  falloff *= falloff;  // Quadratic falloff for brighter cores'#10 +
     '  finalBright *= falloff;'#10 +
+    #10 +
+    '  // Fade out stars approaching the horizon (terrain zone)'#10 +
+    '  float horizonFade = 1.0 - smoothstep(uHorizon - 80.0, uHorizon, fragCoord.y);'#10 +
+    '  finalBright *= horizonFade;'#10 +
     #10 +
     '  return half4(half3(finalBright), 1.0);'#10 +
     '}';
@@ -230,28 +236,38 @@ end;
 function TFlightRenderer.BuildWorldToScreenMatrix(
   const aViewport: TViewport): TMatrix;
 var
-  ScaleX, ScaleY: Single;
+  ScaleX, ScaleY, Scale: Single;
+  WorldWidth, WorldHeight: Single;
   TransX, TransY: Single;
+  OffsetX, OffsetY: Single;
 begin
-  // Scale: maps world range to screen pixels.
-  ScaleX := aViewport.ScreenWidth / (aViewport.ViewRight - aViewport.ViewLeft);
-  ScaleY := aViewport.ScreenHeight / (aViewport.ViewBottom - aViewport.ViewTop);
+  WorldWidth := aViewport.ViewRight - aViewport.ViewLeft;
+  WorldHeight := aViewport.ViewBottom - aViewport.ViewTop;
 
-  // Translation: shifts the scaled world origin to screen origin.
-  TransX := -aViewport.ViewLeft * ScaleX;
-  TransY := -aViewport.ViewTop * ScaleY;
+  // Compute independent scales.
+  ScaleX := aViewport.ScreenWidth / WorldWidth;
+  ScaleY := aViewport.ScreenHeight / WorldHeight;
 
-  // Affine matrix: screenPos = worldPos * scale + translation.
-  // TMatrix fields: m11=scaleX, m12=0, m13=0, m21=0, m22=scaleY, m23=0, m31=transX, m32=transY, m33=1
+  // Use uniform scaling (smaller of the two) to preserve aspect ratio.
+  Scale := Min(ScaleX, ScaleY);
+
+  // Center horizontally, anchor to bottom vertically.
+  OffsetX := (aViewport.ScreenWidth - WorldWidth * Scale) / 2;
+  OffsetY := aViewport.ScreenHeight - WorldHeight * Scale;
+
+  // Translation: world origin to screen, plus centering offset.
+  TransX := -aViewport.ViewLeft * Scale + OffsetX;
+  TransY := -aViewport.ViewTop * Scale + OffsetY;
+
   Result := TMatrix.Identity;
-  Result.m11 := ScaleX;
-  Result.m22 := ScaleY;
+  Result.m11 := Scale;
+  Result.m22 := Scale;
   Result.m31 := TransX;
   Result.m32 := TransY;
 end;
 
 procedure TFlightRenderer.RenderStarfield(const aCanvas: ISkCanvas;
-  aWidth, aHeight: Integer; aTime: Single);
+  aWidth, aHeight: Integer; aTime: Single; aHorizon: Single);
 var
   Builder: ISkRuntimeShaderBuilder;
   Paint: ISkPaint;
@@ -262,6 +278,7 @@ begin
   Builder := TSkRuntimeShaderBuilder.Create(fEffect);
   Builder.SetUniform('uResolution', [Single(aWidth), Single(aHeight)]);
   Builder.SetUniform('uTime', aTime);
+  Builder.SetUniform('uHorizon', aHorizon);
 
   Paint := TSkPaint.Create;
   Paint.Shader := Builder.MakeShader;
@@ -373,6 +390,7 @@ var
   TargetAspect, CanvasAspect: Single;
   ViewWidth, ViewHeight: Single;
   OffsetX, OffsetY: Single;
+  HorizonY: Single;
   Paint: ISkPaint;
   FrameViewport: TViewport;
 begin
@@ -413,8 +431,13 @@ begin
     aCanvas.ClipRect(RectF(OffsetX, OffsetY, OffsetX + ViewWidth, OffsetY + ViewHeight));
     aCanvas.Translate(OffsetX, OffsetY);
 
+    // Horizon: fade stars in the lower portion of the view.
+    // Use the viewport's world-to-screen mapping to find where terrain starts.
+    // With uniform scaling, terrain top maps to a screen Y we can compute.
+    HorizonY := ViewHeight * 0.7;
+
     // Compose render pass: starfield → terrain → craft → effects.
-    RenderStarfield(aCanvas, Round(ViewWidth), Round(ViewHeight), aTime);
+    RenderStarfield(aCanvas, Round(ViewWidth), Round(ViewHeight), aTime, HorizonY);
     RenderTerrain(aCanvas, FrameViewport, aTerrainColor, aPadColor);
     RenderCraft(aCanvas, FrameViewport, aState, aHullParts);
     RenderEffects(aCanvas, FrameViewport, aState, aThrustOffset, aRCSOffsets,

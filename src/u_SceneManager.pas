@@ -52,7 +52,7 @@ type
 implementation
 
 uses
-  u_MenuScene;
+  u_MenuScene, u_PlayScene, u_Scenarios;
 
 { TSceneManager }
 
@@ -145,6 +145,8 @@ begin
   case aSceneID of
     sidMenu:
       Result := TMenuScene.Create;
+    sidPlay:
+      Result := TPlayScene.Create(TScenarioBuilder.BuildDefault);
   else
     // Placeholder for other scenes — will be added in later tasks.
     Result := nil;

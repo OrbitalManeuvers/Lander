@@ -1,0 +1,259 @@
+﻿unit u_PlayScene;
+
+interface
+
+uses
+  System.Types, System.UITypes, System.Skia, Winapi.Windows,
+  u_Models, u_SceneBase, u_FlightRenderer, u_Scenarios, u_Scoring;
+
+type
+  // Core gameplay scene: physics simulation, terrain rendering,
+  // input handling, landing/crash detection.
+  TPlayScene = class(TGameScene)
+  private
+    fScenario: TScenario;
+    fCraftState: TCraftState;
+    fRenderer: TFlightRenderer;
+    fScoreKeeper: TScoreKeeper;
+    fViewport: TViewport;
+    fTime: Single;
+    fCameraX: Single;  // Current camera center X (lazy-follows craft)
+
+    procedure InitCraftState;
+    function GetTransformedHull: TPointFArray;
+  public
+    constructor Create(const aScenario: TScenario);
+    destructor Destroy; override;
+
+    procedure HandleInput(aKeyCode: Word; aKeyState: TKeyState); override;
+    procedure Tick; override;
+    procedure Render(const aCanvas: ISkCanvas; aWidth, aHeight: Integer); override;
+  end;
+
+implementation
+
+uses
+  System.Math, u_Physics, u_Terrain, u_Landing;
+
+{ TPlayScene }
+
+constructor TPlayScene.Create(const aScenario: TScenario);
+begin
+  inherited Create;
+  fScenario := aScenario;
+  fRenderer := TFlightRenderer.Create;
+  fScoreKeeper := TScoreKeeper.Create;
+  fTime := 0;
+
+  // Pre-build terrain paths for rendering
+  fRenderer.SetTerrain(fScenario.World.Terrain, fScenario.World.Pads);
+
+  // Initialize craft state from scenario start conditions
+  InitCraftState;
+
+  // Camera starts centered on the craft's starting X position.
+  fCameraX := fScenario.Start.X;
+end;
+
+destructor TPlayScene.Destroy;
+begin
+  fRenderer.Free;
+  fScoreKeeper.Free;
+  inherited;
+end;
+
+procedure TPlayScene.InitCraftState;
+begin
+  fCraftState := Default(TCraftState);
+  fCraftState.X := fScenario.Start.X;
+  fCraftState.Y := fScenario.Start.Y;
+  fCraftState.VX := fScenario.Start.VX;
+  fCraftState.VY := fScenario.Start.VY;
+  fCraftState.Angle := fScenario.Start.Angle;
+  fCraftState.Fuel := fScenario.Craft.FuelCapacity;
+  fCraftState.RCSFuel := fScenario.Craft.RCSFuelCapacity;
+  fCraftState.Alive := True;
+end;
+
+function TPlayScene.GetTransformedHull: TPointFArray;
+var
+  I: Integer;
+  CosA, SinA: Single;
+  RotX, RotY: Single;
+  Points: TPointFArray;
+begin
+  Points := fScenario.Craft.CollisionPoints;
+  SetLength(Result, Length(Points));
+  CosA := Cos(fCraftState.Angle);
+  SinA := Sin(fCraftState.Angle);
+
+  for I := 0 to High(Points) do
+  begin
+    // Rotate vertex by craft angle, then translate to craft world position
+    RotX := Points[I].X * CosA - Points[I].Y * SinA;
+    RotY := Points[I].X * SinA + Points[I].Y * CosA;
+    Result[I] := PointF(RotX + fCraftState.X, RotY + fCraftState.Y);
+  end;
+end;
+
+procedure TPlayScene.HandleInput(aKeyCode: Word; aKeyState: TKeyState);
+begin
+  case aKeyCode of
+    VK_UP:
+      begin
+        if aKeyState = ksDown then
+          fCraftState.Thrust := 1.0
+        else
+          fCraftState.Thrust := 0.0;
+      end;
+    VK_LEFT:
+      begin
+        fCraftState.RotatingLeft := (aKeyState = ksDown);
+      end;
+    VK_RIGHT:
+      begin
+        fCraftState.RotatingRight := (aKeyState = ksDown);
+      end;
+    Ord('T'):
+      begin
+        // Toggle SAS on key down only, if craft supports it
+        if (aKeyState = ksDown) and fScenario.Craft.HasSAS then
+          fCraftState.SASActive := not fCraftState.SASActive;
+      end;
+  end;
+end;
+
+procedure TPlayScene.Tick;
+var
+  HullPoints: TPointFArray;
+  Contact: TContactResult;
+  Landing: TLandingResult;
+begin
+  if not fCraftState.Alive then
+    Exit;
+
+  // Increment time for starfield animation
+  fTime := fTime + 1.0;
+
+  // Run physics simulation (delta=1.0 since physics is per-tick)
+//  PhysicsTick(fCraftState, fScenario.Craft, fScenario.World, 1.0);
+  PhysicsTick(fCraftState, fScenario.Craft, fScenario.World, 0.05);
+
+  // Transform hull vertices to world space for collision testing
+  HullPoints := GetTransformedHull;
+
+  // Test hull against terrain
+  Contact := TestHullCollision(HullPoints, fScenario.World);
+
+  if Contact.Hit then
+  begin
+    // Evaluate landing criteria
+    Landing := EvaluateLanding(fCraftState, Contact, fScenario.Criteria, False);
+
+    if Landing.Success then
+    begin
+      // Successful landing — award score and signal result
+      if Contact.IsPad and (Contact.PadIndex >= 0) then
+        fScoreKeeper.AwardLanding(
+          fScenario.World.Pads[Contact.PadIndex].PointValue,
+          fCraftState.Fuel,
+          fScenario.Craft.FuelCapacity);
+      fCraftState.Alive := False;
+      SetFinished(sidResult);
+    end
+    else
+    begin
+      // Crash — decrement lives
+      fScoreKeeper.ApplyCrash;
+      fCraftState.Alive := False;
+      SetFinished(sidResult);
+    end;
+  end;
+end;
+
+procedure TPlayScene.Render(const aCanvas: ISkCanvas; aWidth, aHeight: Integer);
+const
+  MinViewHeight = 400.0;  // Minimum viewport height (prevents over-zoom near ground)
+  Margin = 30.0;          // Breathing room above the craft
+  TargetAspect = 3.0 / 2.0;  // Match the 3:2 letterbox aspect
+var
+  TerrainVP: TViewport;
+  ViewTop: Single;
+  ViewHeight: Single;
+  ViewWidth: Single;
+  DeadzoneMargin: Single;
+begin
+  // Get terrain bounds as baseline.
+  TerrainVP := fRenderer.ViewportFromTerrain(
+    fScenario.World.Terrain, Single(aWidth), Single(aHeight));
+
+  // Viewport top tracks the craft position (with margin above).
+  ViewTop := fCraftState.Y - Margin;
+
+  // Enforce minimum viewport height so we don't over-zoom near the surface.
+  ViewHeight := TerrainVP.ViewBottom - ViewTop;
+  if ViewHeight < MinViewHeight then
+  begin
+    ViewTop := TerrainVP.ViewBottom - MinViewHeight;
+    ViewHeight := MinViewHeight;
+  end;
+
+  // Compute viewport width to maintain the 3:2 aspect ratio.
+  // This narrows the horizontal view as the craft descends (zoom effect).
+  ViewWidth := ViewHeight * TargetAspect;
+
+  // If computed width exceeds terrain width, use full terrain width instead.
+  // Craft moves freely on screen without terrain scrolling.
+  if ViewWidth >= (TerrainVP.ViewRight - TerrainVP.ViewLeft) then
+  begin
+    fViewport.ViewLeft := TerrainVP.ViewLeft;
+    fViewport.ViewRight := TerrainVP.ViewRight;
+  end
+  else
+  begin
+    // Deadzone camera: only pan when craft reaches the outer 1/8 of the view.
+    // The camera stays still while craft moves within the middle 75%.
+    DeadzoneMargin := ViewWidth * 0.125;  // 1/8 of view width on each side
+
+    // Check if craft would exit the comfortable zone and nudge camera.
+    if fCraftState.X < (fCameraX - ViewWidth / 2 + DeadzoneMargin) then
+      fCameraX := fCraftState.X + ViewWidth / 2 - DeadzoneMargin
+    else if fCraftState.X > (fCameraX + ViewWidth / 2 - DeadzoneMargin) then
+      fCameraX := fCraftState.X - ViewWidth / 2 + DeadzoneMargin;
+
+    fViewport.ViewLeft := fCameraX - ViewWidth / 2;
+    fViewport.ViewRight := fCameraX + ViewWidth / 2;
+
+    // Clamp so we don't scroll past terrain edges.
+    if fViewport.ViewLeft < TerrainVP.ViewLeft then
+    begin
+      fViewport.ViewLeft := TerrainVP.ViewLeft;
+      fViewport.ViewRight := TerrainVP.ViewLeft + ViewWidth;
+    end;
+    if fViewport.ViewRight > TerrainVP.ViewRight then
+    begin
+      fViewport.ViewRight := TerrainVP.ViewRight;
+      fViewport.ViewLeft := TerrainVP.ViewRight - ViewWidth;
+    end;
+  end;
+
+  fViewport.ViewTop := ViewTop;
+  fViewport.ViewBottom := TerrainVP.ViewBottom;
+  fViewport.ScreenWidth := Single(aWidth);
+  fViewport.ScreenHeight := Single(aHeight);
+
+  // Delegate full render pass to the flight renderer
+  fRenderer.RenderFrame(aCanvas, Single(aWidth), Single(aHeight), fTime * 0.016,
+    fViewport, fCraftState,
+    fScenario.Craft.HullParts,
+    fScenario.Craft.ThrustOffset,
+    fScenario.Craft.RCSOffsets,
+    fScenario.Craft.PlumeColor,
+    fScenario.World.TerrainColor,
+    fScenario.World.PadColor,
+    fScenario.Craft.PlumeLength,
+    fScenario.Craft.PlumeWidth,
+    fScenario.Craft.RCSRadius);
+end;
+
+end.

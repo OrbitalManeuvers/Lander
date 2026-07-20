@@ -90,6 +90,7 @@ type
     fHasSAS: Boolean;
     fHasThrottleControl: Boolean;
     fInstruments: TInstrumentArray;
+    fCollisionPoints: TPointFArray;
   public
     property Name: String read fName write fName;
     property HullParts: TCraftPartArray read fHullParts write fHullParts;
@@ -110,6 +111,7 @@ type
     property HasSAS: Boolean read fHasSAS write fHasSAS;
     property HasThrottleControl: Boolean read fHasThrottleControl write fHasThrottleControl;
     property Instruments: TInstrumentArray read fInstruments write fInstruments;
+    property CollisionPoints: TPointFArray read fCollisionPoints write fCollisionPoints;
   end;
 
   // Static definition of a world/level.
