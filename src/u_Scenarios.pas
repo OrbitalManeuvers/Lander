@@ -61,7 +61,7 @@ begin
 
   // Terrain polyline: ~1000 units wide, jagged lunar surface with 2 pads.
   // Y increases downward; terrain sits in the 850–950 range.
-  SetLength(Terrain, 22);
+  SetLength(Terrain, 24);
   Terrain[0]  := PointF(0, 900);
   Terrain[1]  := PointF(60, 880);
   Terrain[2]  := PointF(120, 920);
@@ -87,20 +87,26 @@ begin
   Terrain[18] := PointF(980, 900);
   Terrain[19] := PointF(1000, 880);
 
-  Terrain[20] := PointF(1200, 940);
-  Terrain[21] := PointF(1200, 940);
+  Terrain[20] := PointF(1000, 580);
+  Terrain[21] := PointF(1150, 610);
+  Terrain[22] := PointF(1200, 610);
+  Terrain[23] := PointF(1500, 940);
 
 
   Result.World.Terrain := Terrain;
 
   // Landing pads
-  SetLength(Pads, 2);
+  SetLength(Pads, 3);
   Pads[0].StartIndex := 5;
   Pads[0].EndIndex := 7;
   Pads[0].PointValue := 50;    // Easy pad, fewer points
   Pads[1].StartIndex := 13;
   Pads[1].EndIndex := 14;
   Pads[1].PointValue := 150;   // Hard pad, more points
+  Pads[2].StartIndex := 21;
+  Pads[2].EndIndex := 22;
+  Pads[2].PointValue := 200;   // Hardest pad, more points
+
   Result.World.Pads := Pads;
 
   // --- Build Craft Profile ---

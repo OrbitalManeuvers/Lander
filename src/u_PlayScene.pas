@@ -80,6 +80,8 @@ begin
 end;
 
 function TPlayScene.GetTransformedHull: TPointFArray;
+const
+  CollisionMargin = 2.0;  // Detect contact slightly before visual overlap
 var
   I: Integer;
   CosA, SinA: Single;
@@ -93,10 +95,11 @@ begin
 
   for I := 0 to High(Points) do
   begin
-    // Rotate vertex by craft angle, then translate to craft world position
+    // Rotate vertex by craft angle, then translate to craft world position.
+    // Subtract CollisionMargin from Y so contact registers before visual overlap.
     RotX := Points[I].X * CosA - Points[I].Y * SinA;
     RotY := Points[I].X * SinA + Points[I].Y * CosA;
-    Result[I] := PointF(RotX + fCraftState.X, RotY + fCraftState.Y);
+    Result[I] := PointF(RotX + fCraftState.X, RotY + fCraftState.Y + CollisionMargin);
   end;
 end;
 
@@ -267,8 +270,8 @@ begin
       fViewport.ViewLeft := TerrainVP.ViewRight - ViewWidth;
     end;
 
-    // Vertical: anchor bottom to terrain bottom, top tracks craft.
-    fViewport.ViewBottom := TerrainVP.ViewBottom;
+    // Vertical: anchor bottom to local ground level below the craft.
+    fViewport.ViewBottom := fCraftState.Y + Altitude + 50;
     fViewport.ViewTop := fCraftState.Y - Margin;
 
     // Enforce minimum view height so terrain stays visible.
