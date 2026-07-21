@@ -4,11 +4,32 @@ interface
 
 uses System.Classes,
   System.SysUtils, System.Skia, Vcl.Controls, Vcl.ExtCtrls, Vcl.Skia,
-  u_Models, u_SceneBase;
+  u_Models, u_SceneBase, u_Scenarios;
 
 type
   // Layout mode for the form surfaces.
   TLayoutMode = (lmFullWindow, lmPanelAndFlight);
+
+  // Persistent cross-scene state that survives scene transitions.
+  // Owned by the scene manager; scenes read/write through it.
+  TSessionContext = class
+  private
+    fScenario: TScenario;         // The scenario selected on the menu
+    fEditorWorld: TWorldProfile;   // Editor's working world (unsaved edits survive play)
+    fEditorFilePath: string;       // File path for save operations
+    fReturnScene: TSceneID;       // Where play should exit to (menu or editor)
+  public
+    destructor Destroy; override;
+    procedure Clear;
+
+    // Transfers world ownership to caller; internal reference becomes nil.
+    function TakeEditorWorld: TWorldProfile;
+
+    property Scenario: TScenario read fScenario write fScenario;
+    property EditorWorld: TWorldProfile read fEditorWorld write fEditorWorld;
+    property EditorFilePath: string read fEditorFilePath write fEditorFilePath;
+    property ReturnScene: TSceneID read fReturnScene write fReturnScene;
+  end;
 
   // Owns the active scene and swaps scenes when one signals completion.
   // Controls layout mode (full-window vs panel+flight).
@@ -19,7 +40,7 @@ type
     fCurrentScene: TGameScene;
     fLayoutMode: TLayoutMode;
     fOnLayoutChange: TNotifyEvent;
-    fEditorFilePath: string;  // World file path for editor scene
+    fSession: TSessionContext;
 
     procedure ApplyLayout(aMode: TLayoutMode);
     procedure TransitionToScene(aSceneID: TSceneID);
@@ -44,11 +65,9 @@ type
     // Starts the scene manager with an initial scene.
     procedure Start(aInitialSceneID: TSceneID);
 
-    // Starts the editor with a specific world file.
-    procedure StartEditor(const aFilePath: string);
-
     property CurrentScene: TGameScene read fCurrentScene;
     property LayoutMode: TLayoutMode read fLayoutMode;
+    property Session: TSessionContext read fSession;
 
     property OnLayoutChange: TNotifyEvent read fOnLayoutChange write fOnLayoutChange;
   end;
@@ -57,8 +76,37 @@ implementation
 
 uses
   System.IOUtils,
-  u_MenuScene, u_PlayScene, u_ResultScene, u_EditorScene, u_Scenarios,
+  u_MenuScene, u_PlayScene, u_ResultScene, u_EditorScene,
   u_Serialization;
+
+{ TSessionContext }
+
+destructor TSessionContext.Destroy;
+begin
+  if fScenario.World <> fEditorWorld then
+    fScenario.World.Free;
+  fScenario.Craft.Free;
+  fEditorWorld.Free;
+  inherited;
+end;
+
+procedure TSessionContext.Clear;
+begin
+  // Free scenario's owned objects, but avoid double-free if EditorWorld is the same
+  if fScenario.World <> fEditorWorld then
+    fScenario.World.Free;
+  fScenario.Craft.Free;
+  FreeAndNil(fEditorWorld);
+  fScenario := Default(TScenario);
+  fEditorFilePath := '';
+  fReturnScene := sidMenu;
+end;
+
+function TSessionContext.TakeEditorWorld: TWorldProfile;
+begin
+  Result := fEditorWorld;
+  fEditorWorld := nil;
+end;
 
 { TSceneManager }
 
@@ -67,27 +115,21 @@ begin
   inherited Create;
   fCurrentScene := nil;
   fLayoutMode := lmFullWindow;
+  fSession := TSessionContext.Create;
 end;
 
 destructor TSceneManager.Destroy;
 begin
   fCurrentScene.Free;
+  fSession.Free;
   inherited;
 end;
 
 procedure TSceneManager.Start(aInitialSceneID: TSceneID);
 begin
   FreeAndNil(fCurrentScene);
-  ApplyLayout(GetSceneLayout(AInitialSceneID));
-  fCurrentScene := CreateScene(AInitialSceneID);
-end;
-
-procedure TSceneManager.StartEditor(const aFilePath: string);
-begin
-  fEditorFilePath := aFilePath;
-  FreeAndNil(fCurrentScene);
-  ApplyLayout(GetSceneLayout(sidEditor));
-  fCurrentScene := CreateScene(sidEditor);
+  ApplyLayout(GetSceneLayout(aInitialSceneID));
+  fCurrentScene := CreateScene(aInitialSceneID);
 end;
 
 procedure TSceneManager.Tick;
@@ -97,7 +139,6 @@ begin
 
   fCurrentScene.Tick;
 
-  // Check if the scene signalled completion
   if fCurrentScene.Finished then
     TransitionToScene(fCurrentScene.NextSceneID);
 end;
@@ -105,7 +146,7 @@ end;
 procedure TSceneManager.Render(const aCanvas: ISkCanvas; aWidth, aHeight: Integer);
 begin
   if fCurrentScene <> nil then
-    fCurrentScene.Render(ACanvas, AWidth, AHeight);
+    fCurrentScene.Render(aCanvas, aWidth, aHeight);
 end;
 
 procedure TSceneManager.RenderPanel(const aCanvas: ISkCanvas; aWidth, aHeight: Integer);
@@ -124,54 +165,90 @@ procedure TSceneManager.TransitionToScene(aSceneID: TSceneID);
 var
   Outcome: TPlayOutcome;
   Scenario: TScenario;
+  EditorWorld: TWorldProfile;
 begin
-  // Extract outcome from play scene before destroying it
+  // --- Extract data from current scene before destroying it ---
+
+  // Play → Result: grab outcome
   if (aSceneID = sidResult) and (fCurrentScene is TPlayScene) then
     Outcome := TPlayScene(fCurrentScene).Outcome
   else
     Outcome := Default(TPlayOutcome);
 
-  // Extract selected scenario from menu scene before destroying it
+  // Menu → Play: grab selected scenario
   if (aSceneID = sidPlay) and (fCurrentScene is TMenuScene) then
-    Scenario := TMenuScene(fCurrentScene).SelectedScenario
-  else
-    Scenario := Default(TScenario);
+  begin
+    Scenario := TMenuScene(fCurrentScene).SelectedScenario;
+    fSession.Scenario := Scenario;
+    fSession.ReturnScene := sidMenu;
+  end;
 
-  // Extract editor file path from menu scene before destroying it
+  // Menu → Editor: grab file path and store scenario for editor→play
   if (aSceneID = sidEditor) and (fCurrentScene is TMenuScene) then
-    fEditorFilePath := TMenuScene(fCurrentScene).EditorFilePath;
+  begin
+    fSession.EditorFilePath := TMenuScene(fCurrentScene).EditorFilePath;
+    fSession.Scenario := TMenuScene(fCurrentScene).SelectedScenario;
+    fSession.ReturnScene := sidMenu;
+  end;
+
+  // Editor → Play: stash the editor's working world
+  if (aSceneID = sidPlay) and (fCurrentScene is TEditorScene) then
+  begin
+    // Take ownership of the editor's world (editor relinquishes it)
+    fSession.EditorWorld.Free;
+    fSession.EditorWorld := TEditorScene(fCurrentScene).DetachWorld;
+    fSession.ReturnScene := sidEditor;
+  end;
+
+  // Editor → Menu: clear editor state
+  if (aSceneID = sidMenu) and (fCurrentScene is TEditorScene) then
+    fSession.Clear;
+
+  // Play → Menu (ESC from play when launched from menu): nothing special
+  // Play → Editor (ESC from play when launched from editor): handled by ReturnScene
 
   // Destroy current scene (screen is guaranteed black at this point)
   FreeAndNil(fCurrentScene);
 
-  // Reconfigure layout based on the next scene's requirements
+  // Reconfigure layout
   ApplyLayout(GetSceneLayout(aSceneID));
 
-  // Create and activate the new scene
+  // --- Create new scene ---
   case aSceneID of
     sidMenu:
-      fCurrentScene := TMenuScene.Create;
+      begin
+        fSession.Clear;
+        fCurrentScene := TMenuScene.Create;
+      end;
+
     sidPlay:
       begin
-        // Resolve the scenario: load world and craft from disk
-        if Scenario.Name <> '' then
-        begin
-          if Scenario.World = nil then
-            Scenario.World := LoadWorldFromJSON(
-              TPath.Combine(TPath.Combine(ExtractFilePath(ParamStr(0)), 'worlds'),
-                Scenario.WorldID));
-          // Craft loading not yet implemented — fall back to BuildDefault's craft
-          if Scenario.Craft = nil then
-            Scenario.Craft := TScenarioBuilder.BuildDefault.Craft;
-          fCurrentScene := TPlayScene.Create(Scenario);
-        end
-        else
-          fCurrentScene := TPlayScene.Create(TScenarioBuilder.BuildDefault);
+        Scenario := fSession.Scenario;
+        // Resolve world: use editor's working copy if available, else load from disk
+        if fSession.EditorWorld <> nil then
+          Scenario.World := fSession.EditorWorld
+        else if Scenario.World = nil then
+          Scenario.World := LoadWorldFromJSON(
+            TPath.Combine(TPath.Combine(ExtractFilePath(ParamStr(0)), 'worlds'),
+              Scenario.WorldID));
+        // Craft: fall back to BuildDefault until craft JSON loading is ready
+        if Scenario.Craft = nil then
+          Scenario.Craft := TScenarioBuilder.BuildDefault.Craft;
+        fCurrentScene := TPlayScene.Create(Scenario, fSession.ReturnScene);
       end;
+
     sidResult:
-      fCurrentScene := TResultScene.Create(Outcome);
+      fCurrentScene := TResultScene.Create(Outcome, fSession.ReturnScene);
+
     sidEditor:
-      fCurrentScene := TEditorScene.Create(fEditorFilePath);
+      begin
+        // If we have a stashed editor world (returning from play), use it
+        EditorWorld := fSession.TakeEditorWorld;
+        if EditorWorld <> nil then
+          fCurrentScene := TEditorScene.Create(fSession.EditorFilePath, EditorWorld)
+        else
+          fCurrentScene := TEditorScene.Create(fSession.EditorFilePath);
+      end;
   else
     fCurrentScene := nil;
   end;
@@ -179,7 +256,7 @@ end;
 
 function TSceneManager.GetSceneLayout(aSceneID: TSceneID): TLayoutMode;
 begin
-  case ASceneID of
+  case aSceneID of
     sidMenu:
       Result := lmFullWindow;
     sidPlay, sidResult, sidEditor:
@@ -191,10 +268,10 @@ end;
 
 procedure TSceneManager.ApplyLayout(aMode: TLayoutMode);
 begin
-  if fLayoutMode = AMode then
+  if fLayoutMode = aMode then
     Exit;
 
-  fLayoutMode := AMode;
+  fLayoutMode := aMode;
   if Assigned(fOnLayoutChange) then
     fOnLayoutChange(Self);
 end;
@@ -205,11 +282,11 @@ begin
     sidMenu:
       Result := TMenuScene.Create;
     sidPlay:
-      Result := TPlayScene.Create(TScenarioBuilder.BuildDefault);
+      Result := TPlayScene.Create(TScenarioBuilder.BuildDefault, sidMenu);
     sidResult:
-      Result := TResultScene.Create(Default(TPlayOutcome));
+      Result := TResultScene.Create(Default(TPlayOutcome), sidMenu);
     sidEditor:
-      Result := TEditorScene.Create(fEditorFilePath);
+      Result := TEditorScene.Create(fSession.EditorFilePath);
   else
     Result := nil;
   end;

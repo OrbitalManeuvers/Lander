@@ -8,7 +8,7 @@ uses
 
 type
   // Displays landing/crash outcome with score breakdown.
-  // Uses starfield background, entrance fade-in, exit fade-out to menu.
+  // Uses starfield background, entrance fade-in, exit fade-out.
   TResultScene = class(TGameScene)
   private
     fOutcome: TPlayOutcome;
@@ -16,10 +16,11 @@ type
     fTime: Single;
     fFadeAlpha: Single;   // 0 = fully visible, 1 = fully black
     fExiting: Boolean;    // True when fade-out triggered
+    fReturnScene: TSceneID;  // Where to go on dismiss (menu or editor)
 
     procedure UpdateFade;
   public
-    constructor Create(const aOutcome: TPlayOutcome);
+    constructor Create(const aOutcome: TPlayOutcome; aReturnScene: TSceneID);
     destructor Destroy; override;
 
     procedure HandleInput(aKeyCode: Word; aKeyState: TKeyState); override;
@@ -38,10 +39,11 @@ const
 
 { TResultScene }
 
-constructor TResultScene.Create(const aOutcome: TPlayOutcome);
+constructor TResultScene.Create(const aOutcome: TPlayOutcome; aReturnScene: TSceneID);
 begin
   inherited Create;
   fOutcome := aOutcome;
+  fReturnScene := aReturnScene;
   fRenderer := TFlightRenderer.Create;
   fTime := 0;
   fFadeAlpha := 1.0;  // Start fully black (entrance fade-in)
@@ -63,7 +65,7 @@ begin
     if fFadeAlpha >= 1.0 then
     begin
       fFadeAlpha := 1.0;
-      SetFinished(sidMenu);
+      SetFinished(fReturnScene);
     end;
   end
   else
@@ -204,10 +206,10 @@ begin
   Paint.Color := TAlphaColor(Cardinal(Round(180 + 75 * Abs(Sin(fTime * 2.0)))) shl 24
     or $00FFFFFF);
 
-  Font.MeasureText('Press ENTER for Menu', TextBounds, Paint);
+  Font.MeasureText('Press ENTER to continue', TextBounds, Paint);
   TextX := (aWidth - TextBounds.Width) / 2;
   TextY := aHeight * 0.75;
-  aCanvas.DrawSimpleText('Press ENTER for Menu', TextX, TextY, Font, Paint);
+  aCanvas.DrawSimpleText('Press ENTER to continue', TextX, TextY, Font, Paint);
 
   // 4. Fade overlay
   if fFadeAlpha > 0 then

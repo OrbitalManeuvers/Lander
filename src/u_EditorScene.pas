@@ -25,14 +25,19 @@ type
     function CursorOverlapsPad: Boolean;
     procedure PlaceFeature(aKind: TFeatureKind);
     procedure PlacePad;
+    procedure InitFromWorld;
   public
-    constructor Create(const aFilePath: string);
+    constructor Create(const aFilePath: string); overload;
+    constructor Create(const aFilePath: string; aWorld: TWorldProfile); overload;
     destructor Destroy; override;
 
     procedure HandleInput(aKeyCode: Word; aKeyState: TKeyState); override;
     procedure Tick; override;
     procedure Render(const aCanvas: ISkCanvas; aWidth, aHeight: Integer); override;
     procedure RenderPanel(const aCanvas: ISkCanvas; aWidth, aHeight: Integer); override;
+
+    // Transfers world ownership to caller (editor no longer frees it)
+    function DetachWorld: TWorldProfile;
   end;
 
 implementation
@@ -44,16 +49,25 @@ uses
 { TEditorScene }
 
 constructor TEditorScene.Create(const aFilePath: string);
-var
-  midIndex: Integer;
 begin
   inherited Create;
   fFilePath := aFilePath;
-
-  // Load world from JSON file
   fWorld := LoadWorldFromJSON(aFilePath);
+  InitFromWorld;
+end;
 
-  // Create renderer and set terrain
+constructor TEditorScene.Create(const aFilePath: string; aWorld: TWorldProfile);
+begin
+  inherited Create;
+  fFilePath := aFilePath;
+  fWorld := aWorld;  // Takes ownership
+  InitFromWorld;
+end;
+
+procedure TEditorScene.InitFromWorld;
+var
+  midIndex: Integer;
+begin
   fRenderer := TFlightRenderer.Create;
   fRenderer.SetTerrain(fWorld.Terrain, fWorld.Pads);
 
@@ -82,6 +96,12 @@ begin
   fRenderer.Free;
   fWorld.Free;
   inherited;
+end;
+
+function TEditorScene.DetachWorld: TWorldProfile;
+begin
+  Result := fWorld;
+  fWorld := nil;  // Caller takes ownership; destructor won't free it
 end;
 
 procedure TEditorScene.HandleInput(aKeyCode: Word; aKeyState: TKeyState);
@@ -155,6 +175,11 @@ begin
         PlacePad
       else
         PlaceFeature(TFeatureKind(fSelectedFeature - 1));
+    end
+    // P key: play the current terrain
+    else if aKeyCode = Ord('P') then
+    begin
+      SetFinished(sidPlay);
     end
     // S key: save world to JSON
     else if aKeyCode = Ord('S') then
@@ -648,7 +673,8 @@ begin
   DrawLine(#$2191#$2193' Altitude', TAlphaColors.Darkgray, fontNormal);
   DrawLine('Shift+'#$2190#$2192' Width', TAlphaColors.Darkgray, fontNormal);
   DrawLine('Space Re-roll', TAlphaColors.Darkgray, fontNormal);
-  DrawLine('S Save  Esc Exit', TAlphaColors.Darkgray, fontNormal);
+  DrawLine('S Save  P Play', TAlphaColors.Darkgray, fontNormal);
+  DrawLine('Esc Exit', TAlphaColors.Darkgray, fontNormal);
 
   y := y + 4;
   DrawSeparator;

@@ -21,6 +21,7 @@ type
     fCameraGroundY: Single;  // Locked ground Y when entering zoomed-in mode
     fZoomedIn: Boolean;  // True = landing view, False = full terrain view
     fOutcome: TPlayOutcome;
+    fReturnScene: TSceneID;  // Where to go on ESC (menu or editor)
 
     // Pause state
     fPaused: Boolean;
@@ -30,7 +31,7 @@ type
     function GetTransformedHull: TPointFArray;
     procedure RenderPauseOverlay(const aCanvas: ISkCanvas; aWidth, aHeight: Integer);
   public
-    constructor Create(const aScenario: TScenario);
+    constructor Create(const aScenario: TScenario; aReturnScene: TSceneID);
     destructor Destroy; override;
 
     procedure HandleInput(aKeyCode: Word; aKeyState: TKeyState); override;
@@ -47,10 +48,11 @@ uses
 
 { TPlayScene }
 
-constructor TPlayScene.Create(const aScenario: TScenario);
+constructor TPlayScene.Create(const aScenario: TScenario; aReturnScene: TSceneID);
 begin
   inherited Create;
   fScenario := aScenario;
+  fReturnScene := aReturnScene;
   fRenderer := TFlightRenderer.Create;
   fScoreKeeper := TScoreKeeper.Create;
   fTime := 0;
@@ -119,8 +121,8 @@ begin
     case aKeyCode of
       VK_ESCAPE:
         begin
-          // Second ESC: exit to menu
-          SetFinished(sidMenu);
+          // Second ESC: exit to return scene (menu or editor)
+          SetFinished(fReturnScene);
         end;
       Ord('C'):
         begin
