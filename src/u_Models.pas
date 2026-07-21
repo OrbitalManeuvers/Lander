@@ -7,7 +7,9 @@ uses
 
 type
   // Scene identifier for scene manager transitions.
-  TSceneID = (sidMenu, sidPlay, sidResult);
+  TSceneID = (sidMenu, sidPlay, sidResult, sidEditor);
+
+  TFeatureKind = (fkJagged, fkRollingHills, fkCanyon, fkMountain, fkCrater, fkCliff, fkFlat, fkRidgeLine, fkChaos);
 
   // A landing pad within the terrain polyline.
   TPad = record
@@ -79,11 +81,17 @@ type
     LivesRemaining: Integer; // Lives after this outcome
   end;
 
+  TEditorCursor = record
+    GridX: Integer;         // cursor left edge in grid units (multiply by 10 for world X)
+    GridWidth: Integer;     // cursor width in grid units (minimum 1)
+    Altitude: Single;       // world Y altitude for feature placement
+  end;
+
   // Static definition of a craft's characteristics.
   // Loaded once, never mutated during play.
   TCraftProfile = class
   private
-    fName: String;
+    fName: string;
     fHullParts: TCraftPartArray;    // Visual parts drawn in order
     fCollisionPath: ISkPath;        // Simplified outer boundary for collision detection
     fThrustOffset: TPointF;         // Engine nozzle position relative to center
@@ -104,7 +112,7 @@ type
     fInstruments: TInstrumentArray;
     fCollisionPoints: TPointFArray;
   public
-    property Name: String read fName write fName;
+    property Name: string read fName write fName;
     property HullParts: TCraftPartArray read fHullParts write fHullParts;
     property CollisionPath: ISkPath read fCollisionPath write fCollisionPath;
     property ThrustOffset: TPointF read fThrustOffset write fThrustOffset;

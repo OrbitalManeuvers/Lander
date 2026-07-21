@@ -19,6 +19,7 @@ type
     fCurrentScene: TGameScene;
     fLayoutMode: TLayoutMode;
     fOnLayoutChange: TNotifyEvent;
+    fEditorFilePath: string;  // World file path for editor scene
 
     procedure ApplyLayout(aMode: TLayoutMode);
     procedure TransitionToScene(aSceneID: TSceneID);
@@ -43,6 +44,9 @@ type
     // Starts the scene manager with an initial scene.
     procedure Start(aInitialSceneID: TSceneID);
 
+    // Starts the editor with a specific world file.
+    procedure StartEditor(const aFilePath: string);
+
     property CurrentScene: TGameScene read fCurrentScene;
     property LayoutMode: TLayoutMode read fLayoutMode;
 
@@ -52,7 +56,7 @@ type
 implementation
 
 uses
-  u_MenuScene, u_PlayScene, u_ResultScene, u_Scenarios;
+  u_MenuScene, u_PlayScene, u_ResultScene, u_EditorScene, u_Scenarios;
 
 { TSceneManager }
 
@@ -74,6 +78,14 @@ begin
   FreeAndNil(fCurrentScene);
   ApplyLayout(GetSceneLayout(AInitialSceneID));
   fCurrentScene := CreateScene(AInitialSceneID);
+end;
+
+procedure TSceneManager.StartEditor(const aFilePath: string);
+begin
+  fEditorFilePath := aFilePath;
+  FreeAndNil(fCurrentScene);
+  ApplyLayout(GetSceneLayout(sidEditor));
+  fCurrentScene := CreateScene(sidEditor);
 end;
 
 procedure TSceneManager.Tick;
@@ -116,6 +128,10 @@ begin
   else
     Outcome := Default(TPlayOutcome);
 
+  // Extract editor file path from menu scene before destroying it
+  if (aSceneID = sidEditor) and (fCurrentScene is TMenuScene) then
+    fEditorFilePath := TMenuScene(fCurrentScene).EditorFilePath;
+
   // Destroy current scene (screen is guaranteed black at this point)
   FreeAndNil(fCurrentScene);
 
@@ -130,6 +146,8 @@ begin
       fCurrentScene := TPlayScene.Create(TScenarioBuilder.BuildDefault);
     sidResult:
       fCurrentScene := TResultScene.Create(Outcome);
+    sidEditor:
+      fCurrentScene := TEditorScene.Create(fEditorFilePath);
   else
     fCurrentScene := nil;
   end;
@@ -140,7 +158,7 @@ begin
   case ASceneID of
     sidMenu:
       Result := lmFullWindow;
-    sidPlay, sidResult:
+    sidPlay, sidResult, sidEditor:
       Result := lmPanelAndFlight;
   else
     Result := lmFullWindow;
@@ -165,8 +183,9 @@ begin
     sidPlay:
       Result := TPlayScene.Create(TScenarioBuilder.BuildDefault);
     sidResult:
-      // Result scene requires an outcome — use default (empty) when called generically.
       Result := TResultScene.Create(Default(TPlayOutcome));
+    sidEditor:
+      Result := TEditorScene.Create(fEditorFilePath);
   else
     Result := nil;
   end;

@@ -18,8 +18,8 @@ type
 
   // A complete scenario definition: everything needed to start a play session.
   TScenario = record
-    WorldID: String;         // Identifier for the world (filename or resource key)
-    CraftID: String;         // Identifier for the craft (filename or resource key)
+    WorldID: string;         // Identifier for the world (filename or resource key)
+    CraftID: string;         // Identifier for the craft (filename or resource key)
     World: TWorldProfile;    // Constructed world profile
     Craft: TCraftProfile;    // Constructed craft profile
     Criteria: TLandingCriteria;  // Landing success/fail thresholds

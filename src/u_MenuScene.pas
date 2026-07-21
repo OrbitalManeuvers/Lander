@@ -7,6 +7,9 @@ uses
   u_Models, u_SceneBase, u_FlightRenderer;
 
 type
+  // Sub-state for the menu scene: title screen vs world file selection.
+  TMenuSubState = (msTitle, msWorldSelect);
+
   // Title screen scene with drifting craft demo and starfield background.
   TMenuScene = class(TGameScene)
   private
@@ -37,15 +40,28 @@ type
     // Fade animation
     fFadeAlpha: Single;         // 0 = fully visible, 1 = fully black
     fExiting: Boolean;          // True when fade-out has been triggered
+    fExitTarget: TSceneID;      // Which scene to transition to on fade complete
 
     // Last known canvas dimensions for wrapping calculations
     fCanvasWidth: Integer;
     fCanvasHeight: Integer;
 
+    // World selection sub-state
+    fSubState: TMenuSubState;
+    fWorldFiles: TArray<string>;      // Full paths of discovered .json files
+    fWorldFileNames: TArray<string>;  // Just filenames for display
+    fSelectedIndex: Integer;          // Currently highlighted file index
+    fEditorFilePath: string;          // Selected file path for editor
+
     procedure InitDemoCraft;
     procedure UpdateCraftDrift;
     procedure UpdateThrusters;
     procedure UpdateFade;
+    procedure ScanWorldFiles;
+    procedure HandleTitleInput(aKeyCode: Word);
+    procedure HandleWorldSelectInput(aKeyCode: Word);
+    procedure RenderTitle(const aCanvas: ISkCanvas; aWidth, aHeight: Integer);
+    procedure RenderWorldSelect(const aCanvas: ISkCanvas; aWidth, aHeight: Integer);
   public
     constructor Create;
     destructor Destroy; override;
@@ -53,12 +69,14 @@ type
     procedure HandleInput(AKeyCode: Word; AKeyState: TKeyState); override;
     procedure Tick; override;
     procedure Render(const ACanvas: ISkCanvas; AWidth, AHeight: Integer); override;
+
+    property EditorFilePath: string read fEditorFilePath;
   end;
 
 implementation
 
 uses
-  System.Math;
+  System.Math, System.IOUtils;
 
 const
   CTickDelta = 0.016;          // ~60 FPS assumed tick interval
@@ -77,8 +95,14 @@ begin
   fTime := 0;
   fFadeAlpha := 1.0;  // Start fully black (entrance fade-in)
   fExiting := False;
+  fExitTarget := sidPlay;
   fCanvasWidth := 800;
   fCanvasHeight := 600;
+
+  // World selection state
+  fSubState := msTitle;
+  fSelectedIndex := 0;
+  fEditorFilePath := '';
 
   InitDemoCraft;
 
@@ -236,7 +260,7 @@ begin
     if fFadeAlpha >= 1.0 then
     begin
       fFadeAlpha := 1.0;
-      SetFinished(sidPlay);
+      SetFinished(fExitTarget);
     end;
   end
   else
@@ -256,12 +280,83 @@ begin
   if AKeyState <> ksDown then
     Exit;
 
-  // Detect start action: Enter or Space
-  if (AKeyCode = 13) or (AKeyCode = 32) then
+  case fSubState of
+    msTitle:
+      HandleTitleInput(AKeyCode);
+    msWorldSelect:
+      HandleWorldSelectInput(AKeyCode);
+  end;
+end;
+
+procedure TMenuScene.HandleTitleInput(aKeyCode: Word);
+begin
+  // Enter or Space: start game
+  if (aKeyCode = 13) or (aKeyCode = 32) then
   begin
     if not fExiting then
+    begin
+      fExitTarget := sidPlay;
       fExiting := True;
+    end;
+  end
+  // E key: open world selection for editor
+  else if aKeyCode = Ord('E') then
+  begin
+    if not fExiting then
+    begin
+      ScanWorldFiles;
+      fSelectedIndex := 0;
+      fSubState := msWorldSelect;
+    end;
   end;
+end;
+
+procedure TMenuScene.HandleWorldSelectInput(aKeyCode: Word);
+begin
+  case aKeyCode of
+    // Up arrow
+    38:
+      begin
+        if (Length(fWorldFiles) > 0) and (fSelectedIndex > 0) then
+          Dec(fSelectedIndex);
+      end;
+    // Down arrow
+    40:
+      begin
+        if fSelectedIndex < High(fWorldFiles) then
+          Inc(fSelectedIndex);
+      end;
+    // Enter: select file and transition to editor
+    13:
+      begin
+        if Length(fWorldFiles) > 0 then
+        begin
+          fEditorFilePath := fWorldFiles[fSelectedIndex];
+          fExitTarget := sidEditor;
+          fExiting := True;
+        end;
+      end;
+    // Escape: return to title
+    27:
+      fSubState := msTitle;
+  end;
+end;
+
+procedure TMenuScene.ScanWorldFiles;
+var
+  WorldsDir: string;
+  I: Integer;
+begin
+  WorldsDir := TPath.Combine(ExtractFilePath(ParamStr(0)), 'worlds');
+  if TDirectory.Exists(WorldsDir) then
+    fWorldFiles := TDirectory.GetFiles(WorldsDir, '*.json')
+  else
+    SetLength(fWorldFiles, 0);
+
+  // Extract just filenames for display
+  SetLength(fWorldFileNames, Length(fWorldFiles));
+  for I := 0 to High(fWorldFiles) do
+    fWorldFileNames[I] := TPath.GetFileName(fWorldFiles[I]);
 end;
 
 procedure TMenuScene.Tick;
@@ -275,12 +370,8 @@ end;
 procedure TMenuScene.Render(const ACanvas: ISkCanvas; AWidth, AHeight: Integer);
 var
   Viewport: TViewport;
-  Font: ISkFont;
-  Typeface: ISkTypeface;
-  Paint: ISkPaint;
-  TextBounds: TRectF;
-  TextX: Single;
   Rect: TRectF;
+  Paint: ISkPaint;
 begin
   // Build a 1:1 viewport (world coords = screen pixels, no letterboxing for menu)
   Viewport.ViewLeft := 0;
@@ -294,15 +385,42 @@ begin
   fCanvasWidth := AWidth;
   fCanvasHeight := AHeight;
 
-  // 1. Render starfield background (full canvas, no letterboxing)
+  // 1. Render starfield background (shared across sub-states)
   fRenderer.RenderStarfield(ACanvas, AWidth, AHeight, fTime);
 
-  // 2. Render the demo craft and its effects
+  // 2. Render the demo craft and its effects (shared across sub-states)
   fRenderer.RenderCraft(ACanvas, Viewport, fCraftState, fHullParts);
   fRenderer.RenderEffects(ACanvas, Viewport, fCraftState, fThrustOffset,
     fRCSOffsets, fPlumeColor, fPlumeLength, fPlumeWidth, fRCSRadius);
 
-  // 3. Draw title text
+  // 3. Sub-state specific rendering
+  case fSubState of
+    msTitle:
+      RenderTitle(ACanvas, AWidth, AHeight);
+    msWorldSelect:
+      RenderWorldSelect(ACanvas, AWidth, AHeight);
+  end;
+
+  // 4. Draw fade overlay (black rect with alpha for entrance/exit animation)
+  if fFadeAlpha > 0 then
+  begin
+    Paint := TSkPaint.Create;
+    Paint.Style := TSkPaintStyle.Fill;
+    Paint.Color := TAlphaColor(Cardinal(Round(fFadeAlpha * 255)) shl 24);
+    Rect := RectF(0, 0, AWidth, AHeight);
+    ACanvas.DrawRect(Rect, Paint);
+  end;
+end;
+
+procedure TMenuScene.RenderTitle(const aCanvas: ISkCanvas; aWidth, aHeight: Integer);
+var
+  Font: ISkFont;
+  Typeface: ISkTypeface;
+  Paint: ISkPaint;
+  TextBounds: TRectF;
+  TextX: Single;
+begin
+  // Draw title text
   Typeface := TSkTypeface.MakeFromName('Consolas', TSkFontStyle.Bold);
   Font := TSkFont.Create(Typeface, 52);
   Paint := TSkPaint.Create;
@@ -311,10 +429,10 @@ begin
 
   // Measure text for centering
   Font.MeasureText('LUNAR LANDER', TextBounds, Paint);
-  TextX := (AWidth - TextBounds.Width) / 2;
-  ACanvas.DrawSimpleText('LUNAR LANDER', TextX, AHeight * 0.28, Font, Paint);
+  TextX := (aWidth - TextBounds.Width) / 2;
+  aCanvas.DrawSimpleText('LUNAR LANDER', TextX, aHeight * 0.28, Font, Paint);
 
-  // 4. Draw start prompt (smaller, slightly pulsing alpha)
+  // Draw start prompt (smaller, slightly pulsing alpha)
   Typeface := TSkTypeface.MakeFromName('Consolas', TSkFontStyle.Normal);
   Font := TSkFont.Create(Typeface, 24);
 
@@ -325,18 +443,99 @@ begin
     or $00FFFFFF);
 
   Font.MeasureText('Press ENTER to start', TextBounds, Paint);
-  TextX := (AWidth - TextBounds.Width) / 2;
-  ACanvas.DrawSimpleText('Press ENTER to start', TextX, AHeight * 0.45, Font, Paint);
+  TextX := (aWidth - TextBounds.Width) / 2;
+  aCanvas.DrawSimpleText('Press ENTER to start', TextX, aHeight * 0.45, Font, Paint);
 
-  // 5. Draw fade overlay (black rect with alpha for entrance/exit animation)
-  if fFadeAlpha > 0 then
+  // Draw editor hint
+  Paint := TSkPaint.Create;
+  Paint.AntiAlias := True;
+  Paint.Color := $99FFFFFF;  // Semi-transparent white
+  Font := TSkFont.Create(Typeface, 18);
+
+  Font.MeasureText('E = Editor', TextBounds, Paint);
+  TextX := (aWidth - TextBounds.Width) / 2;
+  aCanvas.DrawSimpleText('E = Editor', TextX, aHeight * 0.55, Font, Paint);
+end;
+
+procedure TMenuScene.RenderWorldSelect(const aCanvas: ISkCanvas; aWidth, aHeight: Integer);
+var
+  Font: ISkFont;
+  Typeface: ISkTypeface;
+  Paint: ISkPaint;
+  TextBounds: TRectF;
+  TextX, TextY: Single;
+  I: Integer;
+  DisplayText: string;
+begin
+  // Title: SELECT WORLD
+  Typeface := TSkTypeface.MakeFromName('Consolas', TSkFontStyle.Bold);
+  Font := TSkFont.Create(Typeface, 36);
+  Paint := TSkPaint.Create;
+  Paint.Color := TAlphaColors.White;
+  Paint.AntiAlias := True;
+
+  Font.MeasureText('SELECT WORLD', TextBounds, Paint);
+  TextX := (aWidth - TextBounds.Width) / 2;
+  aCanvas.DrawSimpleText('SELECT WORLD', TextX, aHeight * 0.18, Font, Paint);
+
+  // File list
+  Typeface := TSkTypeface.MakeFromName('Consolas', TSkFontStyle.Normal);
+  Font := TSkFont.Create(Typeface, 22);
+  TextY := aHeight * 0.30;
+
+  if Length(fWorldFiles) = 0 then
   begin
+    // No files found message
     Paint := TSkPaint.Create;
-    Paint.Style := TSkPaintStyle.Fill;
-    Paint.Color := TAlphaColor(Cardinal(Round(fFadeAlpha * 255)) shl 24);
-    Rect := RectF(0, 0, AWidth, AHeight);
-    ACanvas.DrawRect(Rect, Paint);
+    Paint.AntiAlias := True;
+    Paint.Color := $FFFF6666;  // Red-ish
+    Font.MeasureText('No worlds found', TextBounds, Paint);
+    TextX := (aWidth - TextBounds.Width) / 2;
+    aCanvas.DrawSimpleText('No worlds found', TextX, TextY, Font, Paint);
+
+    Paint := TSkPaint.Create;
+    Paint.AntiAlias := True;
+    Paint.Color := $99FFFFFF;
+    Font := TSkFont.Create(Typeface, 16);
+    Font.MeasureText('(place .json files in worlds/ folder)', TextBounds, Paint);
+    TextX := (aWidth - TextBounds.Width) / 2;
+    aCanvas.DrawSimpleText('(place .json files in worlds/ folder)', TextX, TextY + 30, Font, Paint);
+  end
+  else
+  begin
+    for I := 0 to High(fWorldFileNames) do
+    begin
+      Paint := TSkPaint.Create;
+      Paint.AntiAlias := True;
+
+      if I = fSelectedIndex then
+      begin
+        // Highlighted item: yellow with arrow prefix
+        Paint.Color := TAlphaColors.Yellow;
+        DisplayText := '> ' + fWorldFileNames[I];
+      end
+      else
+      begin
+        Paint.Color := $CCFFFFFF;
+        DisplayText := '  ' + fWorldFileNames[I];
+      end;
+
+      Font.MeasureText(DisplayText, TextBounds, Paint);
+      TextX := (aWidth - TextBounds.Width) / 2;
+      aCanvas.DrawSimpleText(DisplayText, TextX, TextY + I * 30, Font, Paint);
+    end;
   end;
+
+  // Navigation hints at bottom
+  Font := TSkFont.Create(Typeface, 16);
+  Paint := TSkPaint.Create;
+  Paint.AntiAlias := True;
+  Paint.Color := $99FFFFFF;
+
+  DisplayText := 'Up/Down Select   Enter Open   Esc Back';
+  Font.MeasureText(DisplayText, TextBounds, Paint);
+  TextX := (aWidth - TextBounds.Width) / 2;
+  aCanvas.DrawSimpleText(DisplayText, TextX, aHeight * 0.85, Font, Paint);
 end;
 
 end.

@@ -15,7 +15,9 @@ uses
   u_Serialization in 'u_Serialization.pas',
   u_Scenarios in 'u_Scenarios.pas',
   u_PlayScene in 'u_PlayScene.pas',
-  u_ResultScene in 'u_ResultScene.pas';
+  u_ResultScene in 'u_ResultScene.pas',
+  u_EditorScene in 'u_EditorScene.pas',
+  u_TerrainFeatureGen in 'u_TerrainFeatureGen.pas';
 
 {$R *.res}
 

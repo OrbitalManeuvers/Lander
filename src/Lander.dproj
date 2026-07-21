@@ -144,6 +144,9 @@
         <DCCReference Include="u_Serialization.pas"/>
         <DCCReference Include="u_Scenarios.pas"/>
         <DCCReference Include="u_PlayScene.pas"/>
+        <DCCReference Include="u_ResultScene.pas"/>
+        <DCCReference Include="u_EditorScene.pas"/>
+        <DCCReference Include="u_TerrainFeatureGen.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>
