@@ -18,6 +18,7 @@ type
     fViewport: TViewport;
     fTime: Single;
     fCameraX: Single;  // Current camera center X (lazy-follows craft)
+    fCameraGroundY: Single;  // Locked ground Y when entering zoomed-in mode
     fZoomedIn: Boolean;  // True = landing view, False = full terrain view
     fOutcome: TPlayOutcome;
 
@@ -229,17 +230,44 @@ begin
   if Altitude < 0 then
     Altitude := 9999;  // No terrain below — treat as high altitude
 
-  // Determine view mode based on altitude.
+  // Determine view mode based on altitude and velocity.
   if not fZoomedIn then
   begin
-    // Currently zoomed out — switch to zoomed in when close to ground.
-    if Altitude < ZoomInAltitude then
+    // Currently zoomed out — switch to zoomed in when close to ground
+    // and descending (VY > 0 means moving downward in this coord system).
+    if (Altitude < ZoomInAltitude) and (fCraftState.VY >= 0) then
+    begin
       fZoomedIn := True;
+      // Lock the ground Y at the moment we enter zoomed-in mode
+      fCameraGroundY := fCraftState.Y + Altitude;
+      fCameraX := fCraftState.X;
+    end;
   end
   else
   begin
-    // Currently zoomed in — switch back to zoomed out when high enough.
-    if Altitude > ZoomOutAltitude then
+    // Currently zoomed in — switch back to zoomed out.
+    // Two triggers (either one causes zoom-out):
+    //
+    // 1. Velocity-aware: the faster the craft is rising (VY < 0),
+    //    the earlier we zoom out. Effective threshold lowers with speed.
+    //    Base threshold at 200 altitude, each unit of upward velocity
+    //    reduces it by 3 units of altitude.
+    // 2. Hard ceiling: craft approaching top of locked viewport — must
+    //    flip to keep it visible.
+    var EffectiveZoomOut: Single;
+    EffectiveZoomOut := ZoomOutAltitude;
+    if fCraftState.VY < 0 then
+      EffectiveZoomOut := ZoomOutAltitude + fCraftState.VY * 3.0;
+    // Clamp so we never require impossibly low altitude to zoom out
+    if EffectiveZoomOut < ZoomInAltitude + 20 then
+      EffectiveZoomOut := ZoomInAltitude + 20;
+
+    // Hard ceiling: if craft Y is near the top of the locked viewport
+    var TopMargin: Single;
+    TopMargin := fCameraGroundY + 50 - LandingViewHeight + 40;
+    // TopMargin = viewport top + 40 units of breathing room
+
+    if (Altitude > EffectiveZoomOut) or (fCraftState.Y < TopMargin) then
       fZoomedIn := False;
   end;
 
@@ -250,13 +278,23 @@ begin
   end
   else
   begin
-    // MODE 2: Zoomed In (Landing) — craft centered, terrain scrolls.
+    // MODE 2: Zoomed In (Landing) — fixed camera anchored to ground.
+    // Terrain stays rock-solid; craft moves freely within the frame.
     ViewHeight := LandingViewHeight;
     ViewWidth := ViewHeight * TargetAspect;
 
-    // Center on craft horizontally.
-    fViewport.ViewLeft := fCraftState.X - ViewWidth / 2;
-    fViewport.ViewRight := fCraftState.X + ViewWidth / 2;
+    // Horizontal dead zone: 60% of view width is flyable without scrolling.
+    // That's 30% of view width on each side of center.
+    var DeadZoneX: Single;
+    DeadZoneX := ViewWidth * 0.30;
+
+    if fCraftState.X > fCameraX + DeadZoneX then
+      fCameraX := fCraftState.X - DeadZoneX
+    else if fCraftState.X < fCameraX - DeadZoneX then
+      fCameraX := fCraftState.X + DeadZoneX;
+
+    fViewport.ViewLeft := fCameraX - ViewWidth / 2;
+    fViewport.ViewRight := fCameraX + ViewWidth / 2;
 
     // Clamp to terrain edges.
     if fViewport.ViewLeft < TerrainVP.ViewLeft then
@@ -270,13 +308,10 @@ begin
       fViewport.ViewLeft := TerrainVP.ViewRight - ViewWidth;
     end;
 
-    // Vertical: anchor bottom to local ground level below the craft.
-    fViewport.ViewBottom := fCraftState.Y + Altitude + 50;
-    fViewport.ViewTop := fCraftState.Y - Margin;
-
-    // Enforce minimum view height so terrain stays visible.
-    if (fViewport.ViewBottom - fViewport.ViewTop) < ViewHeight then
-      fViewport.ViewTop := fViewport.ViewBottom - ViewHeight;
+    // Vertical: locked to the ground level captured on zoom-in entry.
+    // The viewport is fixed — terrain never moves vertically.
+    fViewport.ViewBottom := fCameraGroundY + 50;
+    fViewport.ViewTop := fViewport.ViewBottom - ViewHeight;
   end;
 
   fViewport.ScreenWidth := Single(aWidth);

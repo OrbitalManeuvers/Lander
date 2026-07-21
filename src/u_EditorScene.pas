@@ -489,8 +489,13 @@ begin
   // Draw starfield background
   fRenderer.RenderStarfield(aCanvas, aWidth, aHeight, fTime);
 
-  // Compute viewport and draw terrain
-  fViewport := fRenderer.ViewportFromTerrain(fWorld.Terrain, aWidth, aHeight);
+  // Fixed 1500-unit wide viewport, terrain pinned to left edge
+  fViewport.ViewLeft := 0;
+  fViewport.ViewRight := 1500;
+  fViewport.ViewTop := 600;
+  fViewport.ViewBottom := 1000;
+  fViewport.ScreenWidth := aWidth;
+  fViewport.ScreenHeight := aHeight;
   fRenderer.RenderTerrain(aCanvas, fViewport, fWorld.TerrainColor, fWorld.PadColor);
 
   // Compute world-to-screen transform (matching BuildWorldToScreenMatrix logic)

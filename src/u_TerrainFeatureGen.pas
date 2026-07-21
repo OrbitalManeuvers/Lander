@@ -102,7 +102,7 @@ begin
           begin
             // Circular depression: raised rim at edges, dip in center
             amplitude := 60;
-            y := aAltitude + amplitude * (Sqr(2 * t - 1) - 0.5);
+            y := aAltitude - amplitude * (Sqr(2 * t - 1) - 0.5);
           end;
 
         fkCliff:
