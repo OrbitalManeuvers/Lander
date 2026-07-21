@@ -25,6 +25,7 @@ type
     function CursorOverlapsPad: Boolean;
     procedure PlaceFeature(aKind: TFeatureKind);
     procedure PlacePad;
+    procedure ScaleRelief(aFactor: Single);
     procedure InitFromWorld;
   public
     constructor Create(const aFilePath: string); overload;
@@ -104,6 +105,52 @@ begin
   fWorld := nil;  // Caller takes ownership; destructor won't free it
 end;
 
+procedure TEditorScene.ScaleRelief(aFactor: Single);
+var
+  startX, endX: Single;
+  maxY: Single;
+  i: Integer;
+  terrain: TTerrainArray;
+  delta: Single;
+begin
+  // Reject if cursor overlaps a landing pad
+  if CursorOverlapsPad then
+    Exit;
+
+  startX := fCursor.GridX * 10.0;
+  endX := startX + fCursor.GridWidth * 10.0;
+
+  terrain := fWorld.Terrain;
+
+  // Find the floor (maximum Y) within the cursor range — this is the anchor
+  maxY := -1e9;
+  for i := 0 to High(terrain) do
+  begin
+    if (terrain[i].X >= startX) and (terrain[i].X <= endX) then
+    begin
+      if terrain[i].Y > maxY then
+        maxY := terrain[i].Y;
+    end;
+  end;
+
+  if maxY <= -1e9 then
+    Exit;  // No points in range
+
+  // Scale each point's distance from the floor
+  for i := 0 to High(terrain) do
+  begin
+    if (terrain[i].X >= startX) and (terrain[i].X <= endX) then
+    begin
+      delta := maxY - terrain[i].Y;  // Distance above floor (positive)
+      terrain[i].Y := maxY - delta * aFactor;
+    end;
+  end;
+
+  fWorld.Terrain := terrain;
+  fRenderer.SetTerrain(fWorld.Terrain, fWorld.Pads);
+  fDirty := True;
+end;
+
 procedure TEditorScene.HandleInput(aKeyCode: Word; aKeyState: TKeyState);
 var
   shiftHeld: Boolean;
@@ -146,14 +193,20 @@ begin
 
     VK_UP:
       begin
-        // Decrease altitude (lower Y = higher on screen)
-        fCursor.Altitude := fCursor.Altitude - 10;
+        if shiftHeld then
+          ScaleRelief(1.1)  // Shift+Up: make craggier
+        else
+          // Decrease altitude (lower Y = higher on screen)
+          fCursor.Altitude := fCursor.Altitude - 10;
       end;
 
     VK_DOWN:
       begin
-        // Increase altitude (higher Y = lower on screen)
-        fCursor.Altitude := fCursor.Altitude + 10;
+        if shiftHeld then
+          ScaleRelief(0.9)  // Shift+Down: make smoother
+        else
+          // Increase altitude (higher Y = lower on screen)
+          fCursor.Altitude := fCursor.Altitude + 10;
       end;
 
     VK_SPACE:
@@ -672,6 +725,7 @@ begin
   DrawLine(#$2190#$2192' Move', TAlphaColors.Darkgray, fontNormal);
   DrawLine(#$2191#$2193' Altitude', TAlphaColors.Darkgray, fontNormal);
   DrawLine('Shift+'#$2190#$2192' Width', TAlphaColors.Darkgray, fontNormal);
+  DrawLine('Shift+'#$2191#$2193' Relief', TAlphaColors.Darkgray, fontNormal);
   DrawLine('Space Re-roll', TAlphaColors.Darkgray, fontNormal);
   DrawLine('S Save  P Play', TAlphaColors.Darkgray, fontNormal);
   DrawLine('Esc Exit', TAlphaColors.Darkgray, fontNormal);
