@@ -417,7 +417,7 @@ begin
 
   // Fill entire canvas with black (provides the letterbox/pillarbox bars).
   Paint := TSkPaint.Create;
-  Paint.Color := TAlphaColors.Darkslateblue;
+  Paint.Color := TAlphaColors.Black; // Darkslateblue;
   Paint.Style := TSkPaintStyle.Fill;
   aCanvas.DrawRect(RectF(0, 0, aCanvasWidth, aCanvasHeight), Paint);
 
