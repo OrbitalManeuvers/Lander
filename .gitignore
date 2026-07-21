@@ -38,5 +38,6 @@ __recovery/
 *.~*
 
 bin/
+!bin/**/*.json
 dcu/
 .kiro
