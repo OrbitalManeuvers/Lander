@@ -56,7 +56,9 @@ type
 implementation
 
 uses
-  u_MenuScene, u_PlayScene, u_ResultScene, u_EditorScene, u_Scenarios;
+  System.IOUtils,
+  u_MenuScene, u_PlayScene, u_ResultScene, u_EditorScene, u_Scenarios,
+  u_Serialization;
 
 { TSceneManager }
 
@@ -121,12 +123,19 @@ end;
 procedure TSceneManager.TransitionToScene(aSceneID: TSceneID);
 var
   Outcome: TPlayOutcome;
+  Scenario: TScenario;
 begin
   // Extract outcome from play scene before destroying it
   if (aSceneID = sidResult) and (fCurrentScene is TPlayScene) then
     Outcome := TPlayScene(fCurrentScene).Outcome
   else
     Outcome := Default(TPlayOutcome);
+
+  // Extract selected scenario from menu scene before destroying it
+  if (aSceneID = sidPlay) and (fCurrentScene is TMenuScene) then
+    Scenario := TMenuScene(fCurrentScene).SelectedScenario
+  else
+    Scenario := Default(TScenario);
 
   // Extract editor file path from menu scene before destroying it
   if (aSceneID = sidEditor) and (fCurrentScene is TMenuScene) then
@@ -143,7 +152,22 @@ begin
     sidMenu:
       fCurrentScene := TMenuScene.Create;
     sidPlay:
-      fCurrentScene := TPlayScene.Create(TScenarioBuilder.BuildDefault);
+      begin
+        // Resolve the scenario: load world and craft from disk
+        if Scenario.Name <> '' then
+        begin
+          if Scenario.World = nil then
+            Scenario.World := LoadWorldFromJSON(
+              TPath.Combine(TPath.Combine(ExtractFilePath(ParamStr(0)), 'worlds'),
+                Scenario.WorldID));
+          // Craft loading not yet implemented — fall back to BuildDefault's craft
+          if Scenario.Craft = nil then
+            Scenario.Craft := TScenarioBuilder.BuildDefault.Craft;
+          fCurrentScene := TPlayScene.Create(Scenario);
+        end
+        else
+          fCurrentScene := TPlayScene.Create(TScenarioBuilder.BuildDefault);
+      end;
     sidResult:
       fCurrentScene := TResultScene.Create(Outcome);
     sidEditor:

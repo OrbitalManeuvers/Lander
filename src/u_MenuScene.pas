@@ -4,13 +4,11 @@ interface
 
 uses
   System.Types, System.UITypes, System.SysUtils, System.Skia,
-  u_Models, u_SceneBase, u_FlightRenderer;
+  u_Models, u_SceneBase, u_FlightRenderer, u_Scenarios;
 
 type
-  // Sub-state for the menu scene: title screen vs world file selection.
-  TMenuSubState = (msTitle, msWorldSelect);
-
-  // Title screen scene with drifting craft demo and starfield background.
+  // Title screen scene with scenario selection, drifting craft demo,
+  // and starfield background.
   TMenuScene = class(TGameScene)
   private
     fRenderer: TFlightRenderer;
@@ -30,38 +28,33 @@ type
     fDriftAngularVel: Single;
 
     // Random thruster firing state
-    fThrustTimer: Single;       // Countdown to next thrust event
-    fThrustDuration: Single;    // How long current thrust stays on
-    fThrustActive: Boolean;     // Currently firing main engine (visual only)
-    fRCSTimer: Single;          // Countdown to next RCS event
-    fRCSDuration: Single;       // How long current RCS stays on
-    fRCSActive: Boolean;        // Currently firing RCS (visual only)
+    fThrustTimer: Single;
+    fThrustDuration: Single;
+    fThrustActive: Boolean;
+    fRCSTimer: Single;
+    fRCSDuration: Single;
+    fRCSActive: Boolean;
 
     // Fade animation
-    fFadeAlpha: Single;         // 0 = fully visible, 1 = fully black
-    fExiting: Boolean;          // True when fade-out has been triggered
-    fExitTarget: TSceneID;      // Which scene to transition to on fade complete
+    fFadeAlpha: Single;
+    fExiting: Boolean;
+    fExitTarget: TSceneID;
 
     // Last known canvas dimensions for wrapping calculations
     fCanvasWidth: Integer;
     fCanvasHeight: Integer;
 
-    // World selection sub-state
-    fSubState: TMenuSubState;
-    fWorldFiles: TArray<string>;      // Full paths of discovered .json files
-    fWorldFileNames: TArray<string>;  // Just filenames for display
-    fSelectedIndex: Integer;          // Currently highlighted file index
-    fEditorFilePath: string;          // Selected file path for editor
+    // Scenario slots
+    fScenarios: TArray<TScenario>;
+    fSelectedIndex: Integer;
+    fEditorFilePath: string;
 
     procedure InitDemoCraft;
     procedure UpdateCraftDrift;
     procedure UpdateThrusters;
     procedure UpdateFade;
-    procedure ScanWorldFiles;
-    procedure HandleTitleInput(aKeyCode: Word);
-    procedure HandleWorldSelectInput(aKeyCode: Word);
-    procedure RenderTitle(const aCanvas: ISkCanvas; aWidth, aHeight: Integer);
-    procedure RenderWorldSelect(const aCanvas: ISkCanvas; aWidth, aHeight: Integer);
+    procedure MoveSelection(aDelta: Integer);
+    procedure SelectByNumber(aSlot: Integer);
   public
     constructor Create;
     destructor Destroy; override;
@@ -70,25 +63,30 @@ type
     procedure Tick; override;
     procedure Render(const ACanvas: ISkCanvas; AWidth, AHeight: Integer); override;
 
+    // The selected scenario (lightweight — World/Craft are nil until resolved)
+    function SelectedScenario: TScenario;
     property EditorFilePath: string read fEditorFilePath;
   end;
 
 implementation
 
 uses
-  System.Math, System.IOUtils;
+  System.Math, System.IOUtils, u_Serialization;
 
 const
-  CTickDelta = 0.016;          // ~60 FPS assumed tick interval
-  CFadeSpeed = 1.0 / 30.0;    // Fully fade in/out over 30 ticks
+  CTickDelta = 0.016;
+  CFadeSpeed = 1.0 / 30.0;
   CThrustMinInterval = 3.0;
   CThrustMaxInterval = 8.0;
   CThrustMinDuration = 1.0;
   CThrustMaxDuration = 2.0;
+  CMaxSlots = 8;
 
 { TMenuScene }
 
 constructor TMenuScene.Create;
+var
+  ScenariosPath: string;
 begin
   inherited Create;
   fRenderer := TFlightRenderer.Create;
@@ -99,9 +97,20 @@ begin
   fCanvasWidth := 800;
   fCanvasHeight := 600;
 
-  // World selection state
-  fSubState := msTitle;
-  fSelectedIndex := 0;
+  // Load scenario manifest
+  ScenariosPath := TPath.Combine(ExtractFilePath(ParamStr(0)), 'scenarios.json');
+  fScenarios := LoadScenariosFromJSON(ScenariosPath);
+
+  // Ensure array is always 8 slots
+  if Length(fScenarios) < CMaxSlots then
+    SetLength(fScenarios, CMaxSlots);
+
+  // Default selection to first filled slot
+  fSelectedIndex := -1;
+  MoveSelection(1); // finds the first non-empty slot
+  if fSelectedIndex < 0 then
+    fSelectedIndex := 0; // fallback if all empty
+
   fEditorFilePath := '';
 
   InitDemoCraft;
@@ -119,23 +128,57 @@ begin
   inherited;
 end;
 
+function TMenuScene.SelectedScenario: TScenario;
+begin
+  if (fSelectedIndex >= 0) and (fSelectedIndex <= High(fScenarios)) then
+    Result := fScenarios[fSelectedIndex]
+  else
+    Result := Default(TScenario);
+end;
+
+procedure TMenuScene.MoveSelection(aDelta: Integer);
+var
+  i, Next: Integer;
+begin
+  // Move selection by aDelta, skipping empty slots
+  Next := fSelectedIndex;
+  for i := 1 to CMaxSlots do
+  begin
+    Next := Next + aDelta;
+    if (Next < 0) or (Next >= CMaxSlots) then
+      Exit; // Don't wrap, just stop at boundaries
+    if fScenarios[Next].Name <> '' then
+    begin
+      fSelectedIndex := Next;
+      Exit;
+    end;
+  end;
+end;
+
+procedure TMenuScene.SelectByNumber(aSlot: Integer);
+begin
+  // aSlot is 1-based (keys 1..8)
+  if (aSlot >= 1) and (aSlot <= CMaxSlots) then
+  begin
+    if fScenarios[aSlot - 1].Name <> '' then
+      fSelectedIndex := aSlot - 1;
+  end;
+end;
+
 procedure TMenuScene.InitDemoCraft;
 const
-  // Pivot point: center of rotation in grid space
   Pivot: TPointF = (X: 14; Y: 22.5);
 var
   Part: TCraftPart;
 begin
-  // Author craft in grid space: 0,0 = top-left, 28×45 bounding box.
-  // Pivot at (14, 22.5) centers the craft for rotation.
   SetLength(fHullParts, 2);
 
   // Main body: diamond shape (stroke)
   Part.Path := BuildCraftPath([
-    PointF(14, 0),    // Nose (top)
-    PointF(28, 28),   // Right
-    PointF(14, 45),   // Bottom
-    PointF(0, 28)     // Left
+    PointF(14, 0),
+    PointF(28, 28),
+    PointF(14, 45),
+    PointF(0, 28)
   ], Pivot, True);
   Part.Color := TAlphaColors.Silver;
   Part.Style := TSkPaintStyle.Stroke;
@@ -153,10 +196,8 @@ begin
   Part.StrokeWidth := 0;
   fHullParts[1] := Part;
 
-  // Thrust offset: below the craft body (grid: bottom center)
   fThrustOffset := PivotOffset(PointF(14, 45), Pivot);
 
-  // RCS offsets: left and right sides (grid: widest points, slightly outward)
   SetLength(fRCSOffsets, 2);
   fRCSOffsets[0] := PivotOffset(PointF(-0.7, 28), Pivot);
   fRCSOffsets[1] := PivotOffset(PointF(28.7, 28), Pivot);
@@ -166,28 +207,24 @@ begin
   fPlumeWidth := 7.0;
   fRCSRadius := 5.0;
 
-  // Initial craft state: start from left side, drifting right with slow spin
   fCraftState := Default(TCraftState);
   fCraftState.X := 100;
   fCraftState.Y := 200;
   fCraftState.Alive := True;
-  fCraftState.Fuel := 100;      // Always have fuel for visual effects
+  fCraftState.Fuel := 100;
   fCraftState.RCSFuel := 100;
 
-  // Linear drift: move right and slightly down with slow clockwise spin
   fDriftVX := 1.2;
   fDriftVY := 0.3;
-  fDriftAngularVel := 0.02;  // Slow spin (radians per tick)
+  fDriftAngularVel := 0.02;
 end;
 
 procedure TMenuScene.UpdateCraftDrift;
 begin
-  // Simple linear motion — no physics engine involved
   fCraftState.X := fCraftState.X + fDriftVX;
   fCraftState.Y := fCraftState.Y + fDriftVY;
   fCraftState.Angle := fCraftState.Angle + fDriftAngularVel;
 
-  // Wrap around when craft exits view bounds (with some margin)
   if fCraftState.X > fCanvasWidth + 20 then
     fCraftState.X := -20
   else if fCraftState.X < -20 then
@@ -201,7 +238,6 @@ end;
 
 procedure TMenuScene.UpdateThrusters;
 begin
-  // Main engine random firing
   if fThrustActive then
   begin
     fThrustDuration := fThrustDuration - CTickDelta;
@@ -219,11 +255,10 @@ begin
     begin
       fThrustActive := True;
       fThrustDuration := CThrustMinDuration + Random * (CThrustMaxDuration - CThrustMinDuration);
-      fCraftState.Thrust := 0.6 + Random * 0.4;  // Visual throttle level
+      fCraftState.Thrust := 0.6 + Random * 0.4;
     end;
   end;
 
-  // RCS random firing
   if fRCSActive then
   begin
     fRCSDuration := fRCSDuration - CTickDelta;
@@ -242,7 +277,6 @@ begin
     begin
       fRCSActive := True;
       fRCSDuration := CThrustMinDuration + Random * (CThrustMaxDuration - CThrustMinDuration);
-      // Randomly pick left or right
       if Random < 0.5 then
         fCraftState.RotatingLeft := True
       else
@@ -255,7 +289,6 @@ procedure TMenuScene.UpdateFade;
 begin
   if fExiting then
   begin
-    // Fade out: increase alpha toward fully black
     fFadeAlpha := fFadeAlpha + CFadeSpeed;
     if fFadeAlpha >= 1.0 then
     begin
@@ -265,7 +298,6 @@ begin
   end
   else
   begin
-    // Entrance: fade in from black
     if fFadeAlpha > 0 then
     begin
       fFadeAlpha := fFadeAlpha - CFadeSpeed;
@@ -279,84 +311,39 @@ procedure TMenuScene.HandleInput(AKeyCode: Word; AKeyState: TKeyState);
 begin
   if AKeyState <> ksDown then
     Exit;
+  if fExiting then
+    Exit;
 
-  case fSubState of
-    msTitle:
-      HandleTitleInput(AKeyCode);
-    msWorldSelect:
-      HandleWorldSelectInput(AKeyCode);
-  end;
-end;
-
-procedure TMenuScene.HandleTitleInput(aKeyCode: Word);
-begin
-  // Enter or Space: start game
-  if (aKeyCode = 13) or (aKeyCode = 32) then
-  begin
-    if not fExiting then
-    begin
-      fExitTarget := sidPlay;
-      fExiting := True;
-    end;
-  end
-  // E key: open world selection for editor
-  else if aKeyCode = Ord('E') then
-  begin
-    if not fExiting then
-    begin
-      ScanWorldFiles;
-      fSelectedIndex := 0;
-      fSubState := msWorldSelect;
-    end;
-  end;
-end;
-
-procedure TMenuScene.HandleWorldSelectInput(aKeyCode: Word);
-begin
-  case aKeyCode of
+  case AKeyCode of
     // Up arrow
-    38:
-      begin
-        if (Length(fWorldFiles) > 0) and (fSelectedIndex > 0) then
-          Dec(fSelectedIndex);
-      end;
+    38: MoveSelection(-1);
     // Down arrow
-    40:
-      begin
-        if fSelectedIndex < High(fWorldFiles) then
-          Inc(fSelectedIndex);
-      end;
-    // Enter: select file and transition to editor
+    40: MoveSelection(1);
+    // Number keys 1-8
+    Ord('1')..Ord('8'):
+      SelectByNumber(AKeyCode - Ord('0'));
+    // Enter: launch selected scenario
     13:
       begin
-        if Length(fWorldFiles) > 0 then
+        if (fSelectedIndex >= 0) and (fScenarios[fSelectedIndex].Name <> '') then
         begin
-          fEditorFilePath := fWorldFiles[fSelectedIndex];
+          fExitTarget := sidPlay;
+          fExiting := True;
+        end;
+      end;
+    // E key: open selected scenario's world in editor
+    Ord('E'):
+      begin
+        if (fSelectedIndex >= 0) and (fScenarios[fSelectedIndex].Name <> '') then
+        begin
+          fEditorFilePath := TPath.Combine(
+            TPath.Combine(ExtractFilePath(ParamStr(0)), 'worlds'),
+            fScenarios[fSelectedIndex].WorldID);
           fExitTarget := sidEditor;
           fExiting := True;
         end;
       end;
-    // Escape: return to title
-    27:
-      fSubState := msTitle;
   end;
-end;
-
-procedure TMenuScene.ScanWorldFiles;
-var
-  WorldsDir: string;
-  I: Integer;
-begin
-  WorldsDir := TPath.Combine(ExtractFilePath(ParamStr(0)), 'worlds');
-  if TDirectory.Exists(WorldsDir) then
-    fWorldFiles := TDirectory.GetFiles(WorldsDir, '*.json')
-  else
-    SetLength(fWorldFiles, 0);
-
-  // Extract just filenames for display
-  SetLength(fWorldFileNames, Length(fWorldFiles));
-  for I := 0 to High(fWorldFiles) do
-    fWorldFileNames[I] := TPath.GetFileName(fWorldFiles[I]);
 end;
 
 procedure TMenuScene.Tick;
@@ -372,8 +359,14 @@ var
   Viewport: TViewport;
   Rect: TRectF;
   Paint: ISkPaint;
+  Font: ISkFont;
+  Typeface: ISkTypeface;
+  TextBounds: TRectF;
+  TextX, TextY: Single;
+  I: Integer;
+  SlotText: string;
+  LineHeight: Single;
 begin
-  // Build a 1:1 viewport (world coords = screen pixels, no letterboxing for menu)
   Viewport.ViewLeft := 0;
   Viewport.ViewRight := AWidth;
   Viewport.ViewTop := 0;
@@ -381,27 +374,79 @@ begin
   Viewport.ScreenWidth := AWidth;
   Viewport.ScreenHeight := AHeight;
 
-  // Update stored canvas dimensions for wrapping in Tick
   fCanvasWidth := AWidth;
   fCanvasHeight := AHeight;
 
-  // 1. Render starfield background (shared across sub-states)
+  // 1. Starfield background
   fRenderer.RenderStarfield(ACanvas, AWidth, AHeight, fTime);
 
-  // 2. Render the demo craft and its effects (shared across sub-states)
+  // 2. Demo craft
   fRenderer.RenderCraft(ACanvas, Viewport, fCraftState, fHullParts);
   fRenderer.RenderEffects(ACanvas, Viewport, fCraftState, fThrustOffset,
     fRCSOffsets, fPlumeColor, fPlumeLength, fPlumeWidth, fRCSRadius);
 
-  // 3. Sub-state specific rendering
-  case fSubState of
-    msTitle:
-      RenderTitle(ACanvas, AWidth, AHeight);
-    msWorldSelect:
-      RenderWorldSelect(ACanvas, AWidth, AHeight);
+  // 3. Title
+  Typeface := TSkTypeface.MakeFromName('Consolas', TSkFontStyle.Bold);
+  Font := TSkFont.Create(Typeface, 52);
+  Paint := TSkPaint.Create;
+  Paint.Color := TAlphaColors.White;
+  Paint.AntiAlias := True;
+
+  Font.MeasureText('LUNAR LANDER', TextBounds, Paint);
+  TextX := (AWidth - TextBounds.Width) / 2;
+  ACanvas.DrawSimpleText('LUNAR LANDER', TextX, AHeight * 0.22, Font, Paint);
+
+  // 4. Scenario slot list
+  Typeface := TSkTypeface.MakeFromName('Consolas', TSkFontStyle.Normal);
+  Font := TSkFont.Create(Typeface, 20);
+  LineHeight := 28;
+  TextY := AHeight * 0.36;
+
+  for I := 0 to CMaxSlots - 1 do
+  begin
+    Paint := TSkPaint.Create;
+    Paint.AntiAlias := True;
+
+    if fScenarios[I].Name <> '' then
+    begin
+      SlotText := IntToStr(I + 1) + '. ' + fScenarios[I].Name;
+      if I = fSelectedIndex then
+        Paint.Color := TAlphaColors.Yellow
+      else
+        Paint.Color := $CCFFFFFF;
+    end
+    else
+    begin
+      SlotText := IntToStr(I + 1) + '. <empty>';
+      Paint.Color := $55FFFFFF;
+    end;
+
+    // Prefix selected line with cursor
+    if I = fSelectedIndex then
+      SlotText := '> ' + SlotText
+    else
+      SlotText := '  ' + SlotText;
+
+    Font.MeasureText(SlotText, TextBounds, Paint);
+    TextX := (AWidth - TextBounds.Width) / 2;
+    ACanvas.DrawSimpleText(SlotText, TextX, TextY + I * LineHeight, Font, Paint);
   end;
 
-  // 4. Draw fade overlay (black rect with alpha for entrance/exit animation)
+  // 5. Hints below the slot list
+  TextY := TextY + CMaxSlots * LineHeight + 24;
+  Font := TSkFont.Create(Typeface, 16);
+
+  // Pulsing Enter prompt
+  Paint := TSkPaint.Create;
+  Paint.AntiAlias := True;
+  Paint.Color := TAlphaColor(
+    Cardinal(Round(160 + 80 * Abs(Sin(fTime * 2.0)))) shl 24 or $00FFFFFF);
+  SlotText := 'Enter = Play    E = Edit';
+  Font.MeasureText(SlotText, TextBounds, Paint);
+  TextX := (AWidth - TextBounds.Width) / 2;
+  ACanvas.DrawSimpleText(SlotText, TextX, TextY, Font, Paint);
+
+  // 6. Fade overlay
   if fFadeAlpha > 0 then
   begin
     Paint := TSkPaint.Create;
@@ -410,132 +455,6 @@ begin
     Rect := RectF(0, 0, AWidth, AHeight);
     ACanvas.DrawRect(Rect, Paint);
   end;
-end;
-
-procedure TMenuScene.RenderTitle(const aCanvas: ISkCanvas; aWidth, aHeight: Integer);
-var
-  Font: ISkFont;
-  Typeface: ISkTypeface;
-  Paint: ISkPaint;
-  TextBounds: TRectF;
-  TextX: Single;
-begin
-  // Draw title text
-  Typeface := TSkTypeface.MakeFromName('Consolas', TSkFontStyle.Bold);
-  Font := TSkFont.Create(Typeface, 52);
-  Paint := TSkPaint.Create;
-  Paint.Color := TAlphaColors.White;
-  Paint.AntiAlias := True;
-
-  // Measure text for centering
-  Font.MeasureText('LUNAR LANDER', TextBounds, Paint);
-  TextX := (aWidth - TextBounds.Width) / 2;
-  aCanvas.DrawSimpleText('LUNAR LANDER', TextX, aHeight * 0.28, Font, Paint);
-
-  // Draw start prompt (smaller, slightly pulsing alpha)
-  Typeface := TSkTypeface.MakeFromName('Consolas', TSkFontStyle.Normal);
-  Font := TSkFont.Create(Typeface, 24);
-
-  // Subtle pulse effect on the prompt text
-  Paint := TSkPaint.Create;
-  Paint.AntiAlias := True;
-  Paint.Color := TAlphaColor(Cardinal(Round(180 + 75 * Abs(Sin(fTime * 2.0)))) shl 24
-    or $00FFFFFF);
-
-  Font.MeasureText('Press ENTER to start', TextBounds, Paint);
-  TextX := (aWidth - TextBounds.Width) / 2;
-  aCanvas.DrawSimpleText('Press ENTER to start', TextX, aHeight * 0.45, Font, Paint);
-
-  // Draw editor hint
-  Paint := TSkPaint.Create;
-  Paint.AntiAlias := True;
-  Paint.Color := $99FFFFFF;  // Semi-transparent white
-  Font := TSkFont.Create(Typeface, 18);
-
-  Font.MeasureText('E = Editor', TextBounds, Paint);
-  TextX := (aWidth - TextBounds.Width) / 2;
-  aCanvas.DrawSimpleText('E = Editor', TextX, aHeight * 0.55, Font, Paint);
-end;
-
-procedure TMenuScene.RenderWorldSelect(const aCanvas: ISkCanvas; aWidth, aHeight: Integer);
-var
-  Font: ISkFont;
-  Typeface: ISkTypeface;
-  Paint: ISkPaint;
-  TextBounds: TRectF;
-  TextX, TextY: Single;
-  I: Integer;
-  DisplayText: string;
-begin
-  // Title: SELECT WORLD
-  Typeface := TSkTypeface.MakeFromName('Consolas', TSkFontStyle.Bold);
-  Font := TSkFont.Create(Typeface, 36);
-  Paint := TSkPaint.Create;
-  Paint.Color := TAlphaColors.White;
-  Paint.AntiAlias := True;
-
-  Font.MeasureText('SELECT WORLD', TextBounds, Paint);
-  TextX := (aWidth - TextBounds.Width) / 2;
-  aCanvas.DrawSimpleText('SELECT WORLD', TextX, aHeight * 0.18, Font, Paint);
-
-  // File list
-  Typeface := TSkTypeface.MakeFromName('Consolas', TSkFontStyle.Normal);
-  Font := TSkFont.Create(Typeface, 22);
-  TextY := aHeight * 0.30;
-
-  if Length(fWorldFiles) = 0 then
-  begin
-    // No files found message
-    Paint := TSkPaint.Create;
-    Paint.AntiAlias := True;
-    Paint.Color := $FFFF6666;  // Red-ish
-    Font.MeasureText('No worlds found', TextBounds, Paint);
-    TextX := (aWidth - TextBounds.Width) / 2;
-    aCanvas.DrawSimpleText('No worlds found', TextX, TextY, Font, Paint);
-
-    Paint := TSkPaint.Create;
-    Paint.AntiAlias := True;
-    Paint.Color := $99FFFFFF;
-    Font := TSkFont.Create(Typeface, 16);
-    Font.MeasureText('(place .json files in worlds/ folder)', TextBounds, Paint);
-    TextX := (aWidth - TextBounds.Width) / 2;
-    aCanvas.DrawSimpleText('(place .json files in worlds/ folder)', TextX, TextY + 30, Font, Paint);
-  end
-  else
-  begin
-    for I := 0 to High(fWorldFileNames) do
-    begin
-      Paint := TSkPaint.Create;
-      Paint.AntiAlias := True;
-
-      if I = fSelectedIndex then
-      begin
-        // Highlighted item: yellow with arrow prefix
-        Paint.Color := TAlphaColors.Yellow;
-        DisplayText := '> ' + fWorldFileNames[I];
-      end
-      else
-      begin
-        Paint.Color := $CCFFFFFF;
-        DisplayText := '  ' + fWorldFileNames[I];
-      end;
-
-      Font.MeasureText(DisplayText, TextBounds, Paint);
-      TextX := (aWidth - TextBounds.Width) / 2;
-      aCanvas.DrawSimpleText(DisplayText, TextX, TextY + I * 30, Font, Paint);
-    end;
-  end;
-
-  // Navigation hints at bottom
-  Font := TSkFont.Create(Typeface, 16);
-  Paint := TSkPaint.Create;
-  Paint.AntiAlias := True;
-  Paint.Color := $99FFFFFF;
-
-  DisplayText := 'Up/Down Select   Enter Open   Esc Back';
-  Font.MeasureText(DisplayText, TextBounds, Paint);
-  TextX := (aWidth - TextBounds.Width) / 2;
-  aCanvas.DrawSimpleText(DisplayText, TextX, aHeight * 0.85, Font, Paint);
 end;
 
 end.

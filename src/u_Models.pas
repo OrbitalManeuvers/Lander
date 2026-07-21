@@ -22,7 +22,6 @@ type
   TLandingCriteria = record
     MaxSpeed: Single;      // Maximum resultant velocity magnitude
     MaxAngle: Single;      // Maximum deviation from vertical (degrees)
-    MustBeOnPad: Boolean;  // Whether contact must be on a pad segment
   end;
 
   // Real-time mutable state of the craft during gameplay.

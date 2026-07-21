@@ -43,7 +43,7 @@ begin
   Result.FailGear := False;
 
   // Check pad requirement
-  if aCriteria.MustBeOnPad and (not aContact.IsPad) then
+  if not aContact.IsPad then
   begin
     Result.FailPad := True;
     Result.Success := False;

@@ -3,7 +3,7 @@ unit u_Serialization;
 interface
 
 uses System.JSON,
-  u_Models;
+  u_Models, u_Scenarios;
 
 // Keeps file I/O out of base classes
 
@@ -24,9 +24,21 @@ type
     property AsJSON: TJSONObject read GetJSON write SetJSON;
   end;
 
+  TScenarioHelper = record helper for TScenario
+  private
+    function GetJSON: TJSONObject;
+    procedure SetJSON(const Value: TJSONObject);
+  public
+    property AsJSON: TJSONObject read GetJSON write SetJSON;
+  end;
+
 // Standalone file I/O for world profiles
 procedure SaveWorldToJSON(aWorld: TWorldProfile; const aFilePath: string);
 function LoadWorldFromJSON(const aFilePath: string): TWorldProfile;
+
+// Scenario manifest I/O (8-slot array, nulls for empty slots)
+function LoadScenariosFromJSON(const aFilePath: string): TArray<TScenario>;
+procedure SaveScenariosToJSON(const aScenarios: TArray<TScenario>; const aFilePath: string);
 
 implementation
 
@@ -36,6 +48,7 @@ uses
 
 const
   KEY_NAME = 'name';
+  KEY_DESCRIPTION = 'description';
   KEY_PIVOT = 'pivot';
   KEY_THRUST_OFFSET = 'thrustOffset';
   KEY_RCS_OFFSETS = 'rcsOffsets';
@@ -64,6 +77,40 @@ const
   KEY_END_INDEX = 'endIndex';
   KEY_POINT_VALUE = 'pointValue';
 
+  // additional scenario keys
+  KEY_WORLD = 'world';
+  KEY_CRAFT = 'craft';
+  KEY_LIVES = 'lives';
+
+  // starting conditions
+  KEY_START = 'start';
+  KEY_VX = 'vx';
+  KEY_VY = 'vy';
+  KEY_ANGLE = 'angle';
+
+  // landing criteria
+  KEY_CRITERIA = 'criteria';
+  KEY_MAX_SPEED = 'maxSpeed';
+  KEY_MAX_ANGLE = 'maxAngle';
+
+
+type
+  TStartConditionsHelper = record helper for TStartConditions
+  private
+    function GetJSON: TJSONObject;
+    procedure SetJSON(const Value: TJSONObject);
+  public
+    property AsJSON: TJSONObject read GetJSON write SetJSON;
+  end;
+
+  TLandingCriteriaHelper = record helper for TLandingCriteria
+  private
+    function GetJSON: TJSONObject;
+    procedure SetJSON(const Value: TJSONObject);
+  public
+    property AsJSON: TJSONObject read GetJSON write SetJSON;
+  end;
+
 
 type
   { TSimpleJSONReader }
@@ -83,6 +130,123 @@ type
     property AsJSON: TJSONArray read GetJSON write SetJSON;
   end;
 
+
+{ Standalone world I/O }
+
+procedure SaveWorldToJSON(aWorld: TWorldProfile; const aFilePath: string);
+var
+  json: TJSONObject;
+  content: string;
+begin
+  json := aWorld.AsJSON;
+  try
+    content := json.Format(2);
+    TFile.WriteAllText(aFilePath, content, TEncoding.UTF8);
+  finally
+    json.Free;
+  end;
+end;
+
+function LoadWorldFromJSON(const aFilePath: string): TWorldProfile;
+var
+  content: string;
+  json: TJSONObject;
+begin
+  Result := TWorldProfile.Create;
+  content := TFile.ReadAllText(aFilePath, TEncoding.UTF8);
+  json := TJSONObject.ParseJSONValue(content) as TJSONObject;
+  try
+    if json <> nil then
+      Result.AsJSON := json;
+  finally
+    json.Free;
+  end;
+end;
+
+{ Scenario manifest I/O }
+
+function LoadScenariosFromJSON(const aFilePath: string): TArray<TScenario>;
+var
+  content: string;
+  arr: TJSONArray;
+  i: Integer;
+  obj: TJSONObject;
+  scenario: TScenario;
+begin
+  Result := nil;
+  if not TFile.Exists(aFilePath) then
+    Exit;
+
+  content := TFile.ReadAllText(aFilePath, TEncoding.UTF8);
+  arr := TJSONObject.ParseJSONValue(content) as TJSONArray;
+  if arr = nil then
+    Exit;
+
+  try
+    SetLength(Result, arr.Count);
+    for i := 0 to arr.Count - 1 do
+    begin
+      if arr.Items[i] is TJSONObject then
+      begin
+        obj := arr.Items[i] as TJSONObject;
+        scenario := Default(TScenario);
+        scenario.AsJSON := obj;
+        Result[i] := scenario;
+      end;
+      // null entries stay as default (Name = '', World = nil, etc.)
+    end;
+  finally
+    arr.Free;
+  end;
+end;
+
+procedure SaveScenariosToJSON(const aScenarios: TArray<TScenario>; const aFilePath: string);
+var
+  arr: TJSONArray;
+  i: Integer;
+  content: string;
+begin
+  arr := TJSONArray.Create;
+  try
+    for i := 0 to High(aScenarios) do
+    begin
+      if aScenarios[i].Name <> '' then
+        arr.AddElement(aScenarios[i].AsJSON)
+      else
+        arr.AddElement(TJSONNull.Create);
+    end;
+    content := arr.Format(2);
+    TFile.WriteAllText(aFilePath, content, TEncoding.UTF8);
+  finally
+    arr.Free;
+  end;
+end;
+
+{ TSimpleJSONReader }
+function TSimpleJSONReader.IntValue(aKey: string): Integer;
+begin
+  Result := -1;
+  var aValue: Integer;
+  if Self.TryGetValue(aKey, aValue) then
+    Result := aValue;
+end;
+
+function TSimpleJSONReader.FloatValue(aKey: string): Single;
+var
+  aValue: Double;
+begin
+  Result := 0;
+  if Self.TryGetValue(aKey, aValue) then
+    Result := Single(aValue);
+end;
+
+function TSimpleJSONReader.StrValue(aKey: string): string;
+begin
+  Result := '';
+  var aValue: string;
+  if Self.TryGetValue(aKey, aValue) then
+    Result := aValue;
+end;
 
 { TTerrainArrayHelper }
 
@@ -113,6 +277,7 @@ begin
     Result.AddElement(obj);
   end;
 end;
+
 
 { TCraftHelper }
 
@@ -225,74 +390,96 @@ begin
   end;
 end;
 
-{ Standalone world I/O }
+{ TScenarioHelper }
 
-procedure SaveWorldToJSON(aWorld: TWorldProfile; const aFilePath: string);
+function TScenarioHelper.GetJSON: TJSONObject;
 var
-  json: TJSONObject;
-  content: string;
+  startObj, criteriaObj: TJSONObject;
 begin
-  json := aWorld.AsJSON;
-  try
-    content := json.Format(2);
-    TFile.WriteAllText(aFilePath, content, TEncoding.UTF8);
-  finally
-    json.Free;
-  end;
+  Result := TJSONObject.Create;
+  Result.AddPair(KEY_NAME, Self.Name);
+  if Self.Description <> '' then
+    Result.AddPair(KEY_DESCRIPTION, Self.Description);
+  Result.AddPair(KEY_WORLD, Self.WorldID);
+  Result.AddPair(KEY_CRAFT, Self.CraftID);
+  Result.AddPair(KEY_LIVES, TJSONNumber.Create(Self.Lives));
+
+  // Start conditions
+  startObj := Self.Start.AsJSON;
+  Result.AddPair(KEY_START, startObj);
+
+  // Landing criteria
+  criteriaObj := Self.Criteria.AsJSON;
+  Result.AddPair(KEY_CRITERIA, criteriaObj);
 end;
 
-function LoadWorldFromJSON(const aFilePath: string): TWorldProfile;
+procedure TScenarioHelper.SetJSON(const Value: TJSONObject);
 var
-  content: string;
-  json: TJSONObject;
+  startObj, criteriaObj: TJSONObject;
+  livesVal: Integer;
 begin
-  Result := TWorldProfile.Create;
-  content := TFile.ReadAllText(aFilePath, TEncoding.UTF8);
-  json := TJSONObject.ParseJSONValue(content) as TJSONObject;
-  try
-    if json <> nil then
-      Result.AsJSON := json;
-  finally
-    json.Free;
-  end;
+  Self.Name := Value.StrValue(KEY_NAME);
+  Self.Description := Value.StrValue(KEY_DESCRIPTION);
+  Self.WorldID := Value.StrValue(KEY_WORLD);
+  Self.CraftID := Value.StrValue(KEY_CRAFT);
+
+  // Lives: default to 3 if not present
+  livesVal := Value.IntValue(KEY_LIVES);
+  if livesVal > 0 then
+    Self.Lives := livesVal
+  else
+    Self.Lives := 3;
+
+  // Start conditions
+  if Value.TryGetValue(KEY_START, startObj) then
+    Self.Start.AsJSON := startObj;
+
+  // Landing criteria
+  if Value.TryGetValue(KEY_CRITERIA, criteriaObj) then
+    Self.Criteria.AsJSON := criteriaObj;
+
+  // World and Craft remain nil — resolved separately when launching play
+  Self.World := nil;
+  Self.Craft := nil;
 end;
 
-{ TSimpleJSONReader }
-function TSimpleJSONReader.IntValue(aKey: string): Integer;
+
+
+
+{ TStartConditionsHelper }
+
+function TStartConditionsHelper.GetJSON: TJSONObject;
 begin
-  Result := -1;
-  var aValue: Integer;
-  if Self.TryGetValue(aKey, aValue) then
-    Result := aValue;
+  Result := TJSONObject.Create;
+  Result.AddPair(KEY_X, TJSONNumber.Create(Self.X));
+  Result.AddPair(KEY_Y, TJSONNumber.Create(Self.Y));
+  Result.AddPair(KEY_VX, TJSONNumber.Create(Self.VX));
+  Result.AddPair(KEY_VY, TJSONNumber.Create(Self.VY));
+  Result.AddPair(KEY_ANGLE, TJSONNumber.Create(Self.Angle));
 end;
 
-function TSimpleJSONReader.FloatValue(aKey: string): Single;
-var
-  aValue: Double;
+procedure TStartConditionsHelper.SetJSON(const Value: TJSONObject);
 begin
-  Result := 0;
-  if Self.TryGetValue(aKey, aValue) then
-    Result := Single(aValue);
+  Self.X := Value.FloatValue(KEY_X);
+  Self.Y := Value.FloatValue(KEY_Y);
+  Self.VX := Value.FloatValue(KEY_VX);
+  Self.VY := Value.FloatValue(KEY_VY);
+  Self.Angle := Value.FloatValue(KEY_ANGLE);
 end;
 
-function TSimpleJSONReader.StrValue(aKey: string): string;
+{ TLandingCriteriaHelper }
+
+function TLandingCriteriaHelper.GetJSON: TJSONObject;
 begin
-  Result := '';
-  var aValue: string;
-  if Self.TryGetValue(aKey, aValue) then
-    Result := aValue;
+  Result := TJSONObject.Create;
+  Result.AddPair(KEY_MAX_SPEED, TJSONNumber.Create(Self.MaxSpeed));
+  Result.AddPair(KEY_MAX_ANGLE, TJSONNumber.Create(Self.MaxAngle));
 end;
 
-//function TSimpleJSONReader.PointValue(aKey, aXKey, aYkey: string): TPoint;
-//begin
-//  Result := Default(TPoint);
-//  var obj: TJSONObject;
-//  if Self.TryGetValue(aKey, obj) then
-//  begin
-//    Result.x := obj.IntValue(aXKey);
-//    Result.y := obj.IntValue(aYKey);
-//  end;
-//end;
-
+procedure TLandingCriteriaHelper.SetJSON(const Value: TJSONObject);
+begin
+  Self.MaxSpeed := Value.FloatValue(KEY_MAX_SPEED);
+  Self.MaxAngle := Value.FloatValue(KEY_MAX_ANGLE);
+end;
 
 end.

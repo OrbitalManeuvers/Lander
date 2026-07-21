@@ -22,8 +22,13 @@ type
     fZoomedIn: Boolean;  // True = landing view, False = full terrain view
     fOutcome: TPlayOutcome;
 
+    // Pause state
+    fPaused: Boolean;
+    fPauseConfirm: Boolean;  // True = ESC pressed once (waiting for 2nd ESC or C)
+
     procedure InitCraftState;
     function GetTransformedHull: TPointFArray;
+    procedure RenderPauseOverlay(const aCanvas: ISkCanvas; aWidth, aHeight: Integer);
   public
     constructor Create(const aScenario: TScenario);
     destructor Destroy; override;
@@ -106,7 +111,41 @@ end;
 
 procedure TPlayScene.HandleInput(aKeyCode: Word; aKeyState: TKeyState);
 begin
+  // Pause controls take priority
+  if fPaused then
+  begin
+    if aKeyState <> ksDown then
+      Exit;
+    case aKeyCode of
+      VK_ESCAPE:
+        begin
+          // Second ESC: exit to menu
+          SetFinished(sidMenu);
+        end;
+      Ord('C'):
+        begin
+          // Continue: unpause
+          fPaused := False;
+          fPauseConfirm := False;
+        end;
+    end;
+    Exit;
+  end;
+
+  // Normal flight controls
   case aKeyCode of
+    VK_ESCAPE:
+      begin
+        if aKeyState = ksDown then
+        begin
+          fPaused := True;
+          fPauseConfirm := True;
+          // Kill active inputs so craft doesn't drift with keys held
+          fCraftState.Thrust := 0;
+          fCraftState.RotatingLeft := False;
+          fCraftState.RotatingRight := False;
+        end;
+      end;
     VK_UP:
       begin
         if aKeyState = ksDown then
@@ -124,7 +163,6 @@ begin
       end;
     Ord('T'):
       begin
-        // Toggle SAS on key down only, if craft supports it
         if (aKeyState = ksDown) and fScenario.Craft.HasSAS then
           fCraftState.SASActive := not fCraftState.SASActive;
       end;
@@ -137,6 +175,9 @@ var
   Contact: TContactResult;
   Landing: TLandingResult;
 begin
+  if fPaused then
+    Exit;
+
   if not fCraftState.Alive then
     Exit;
 
@@ -329,6 +370,47 @@ begin
     fScenario.Craft.PlumeLength,
     fScenario.Craft.PlumeWidth,
     fScenario.Craft.RCSRadius);
+
+  // Draw pause overlay on top of everything
+  if fPaused then
+    RenderPauseOverlay(aCanvas, aWidth, aHeight);
+end;
+
+procedure TPlayScene.RenderPauseOverlay(const aCanvas: ISkCanvas; aWidth, aHeight: Integer);
+var
+  Paint: ISkPaint;
+  Font: ISkFont;
+  Typeface: ISkTypeface;
+  TextBounds: TRectF;
+  TextX: Single;
+begin
+  // Semi-transparent dark overlay to dim the scene
+  Paint := TSkPaint.Create;
+  Paint.Style := TSkPaintStyle.Fill;
+  Paint.Color := $AA000000;  // ~67% black
+  aCanvas.DrawRect(RectF(0, 0, aWidth, aHeight), Paint);
+
+  // "PAUSED" title
+  Typeface := TSkTypeface.MakeFromName('Consolas', TSkFontStyle.Bold);
+  Font := TSkFont.Create(Typeface, 40);
+  Paint := TSkPaint.Create;
+  Paint.Color := TAlphaColors.White;
+  Paint.AntiAlias := True;
+
+  Font.MeasureText('PAUSED', TextBounds, Paint);
+  TextX := (aWidth - TextBounds.Width) / 2;
+  aCanvas.DrawSimpleText('PAUSED', TextX, aHeight * 0.42, Font, Paint);
+
+  // Instructions
+  Typeface := TSkTypeface.MakeFromName('Consolas', TSkFontStyle.Normal);
+  Font := TSkFont.Create(Typeface, 20);
+  Paint := TSkPaint.Create;
+  Paint.Color := $CCFFFFFF;
+  Paint.AntiAlias := True;
+
+  Font.MeasureText('ESC = Exit    C = Continue', TextBounds, Paint);
+  TextX := (aWidth - TextBounds.Width) / 2;
+  aCanvas.DrawSimpleText('ESC = Exit    C = Continue', TextX, aHeight * 0.52, Font, Paint);
 end;
 
 end.

@@ -37,7 +37,5 @@ __history/
 __recovery/
 *.~*
 
-bin/
-!bin/**/*.json
 dcu/
 .kiro

@@ -18,6 +18,9 @@ type
 
   // A complete scenario definition: everything needed to start a play session.
   TScenario = record
+    Name: string;
+    Description: string;
+    Lives: Integer;
     WorldID: string;         // Identifier for the world (filename or resource key)
     CraftID: string;         // Identifier for the craft (filename or resource key)
     World: TWorldProfile;    // Constructed world profile
@@ -217,7 +220,6 @@ begin
   // --- Landing Criteria ---
   Result.Criteria.MaxSpeed := 3.0;
   Result.Criteria.MaxAngle := 15.0;   // Degrees
-  Result.Criteria.MustBeOnPad := True;
 
   // --- Start Conditions ---
   Result.Start.X := 0;    // Center of terrain
