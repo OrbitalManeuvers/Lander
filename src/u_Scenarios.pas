@@ -35,6 +35,7 @@ type
   public
     // Returns the default v1 scenario (Moon + basic lander).
     class function BuildDefault: TScenario;
+    class function BuildBubbleCraft: TCraftProfile;
   end;
 
 implementation
@@ -113,6 +114,9 @@ begin
   Result.World.Pads := Pads;
 
   // --- Build Craft Profile ---
+  Result.Craft := BuildBubbleCraft;
+
+{$ifdef false}
   Result.Craft := TCraftProfile.Create;
   Result.Craft.Name := 'Basic Lander';
 
@@ -216,6 +220,7 @@ begin
     PivotOffset(PointF(0, 45), Pivot),
     PivotOffset(PointF(4, 38), Pivot),
     PivotOffset(PointF(2, 18), Pivot));
+{$endif}
 
   // --- Landing Criteria ---
   Result.Criteria.MaxSpeed := 3.0;
@@ -228,5 +233,139 @@ begin
   Result.Start.VY := 0;
   Result.Start.Angle := -90;
 end;
+
+
+class function TScenarioBuilder.BuildBubbleCraft: TCraftProfile;
+var
+  Part: TCraftPart;
+  Pivot: TPointF;
+  HullParts: TCraftPartArray;
+  RCSOffsets: TPointFArray;
+  BubbleBuilder: ISkPathBuilder;
+  BubblePath: ISkPath;
+  BodyPath: ISkPath;
+begin
+  Result := TCraftProfile.Create;
+  Result.Name := 'Bubble Lander';
+
+  // Grid: 32 wide × 42 tall
+  Pivot := PointF(16, 21);
+
+  SetLength(HullParts, 5);
+
+  // Build the body path once (used for both fill and stroke)
+  // Top edge: X 5..27 (22 wide), Bottom edge: X 3..29 (26 wide)
+  BodyPath := BuildCraftPath([
+    PointF(5, 18),    // Top-left
+    PointF(27, 18),   // Top-right
+    PointF(29, 36),   // Bottom-right
+    PointF(3, 36)     // Bottom-left
+  ], Pivot, True);
+
+  // Part 0: Bubble cockpit dome (drawn first, behind body)
+  // Slightly narrower than body top edge: X 7..25 (18 wide)
+  BubbleBuilder := TSkPathBuilder.Create;
+  BubbleBuilder.MoveTo(PointF(7 - Pivot.X, 18 - Pivot.Y));
+  BubbleBuilder.ArcTo(
+    RectF(7 - Pivot.X, 1 - Pivot.Y, 25 - Pivot.X, 35 - Pivot.Y),  // Oval rect
+    180,   // Start angle (left side)
+    180,   // Sweep angle (half circle going over the top)
+    False
+  );
+  BubbleBuilder.Close;
+  BubblePath := BubbleBuilder.Detach;
+
+  Part.Path := BubblePath;
+  Part.Color := $FF4488CC;  // Blue cockpit
+  Part.Style := TSkPaintStyle.Fill;
+  Part.StrokeWidth := 0;
+  HullParts[0] := Part;
+
+  // Part 1: Body fill (black, covers bubble bottom half so stars don't show)
+  Part.Path := BodyPath;
+  Part.Color := $FF000000;  // Black fill
+  Part.Style := TSkPaintStyle.Fill;
+  Part.StrokeWidth := 0;
+  HullParts[1] := Part;
+
+  // Part 2: Body stroke (silver outline on top)
+  Part.Path := BodyPath;
+  Part.Color := $FFC0C0C0;  // Silver
+  Part.Style := TSkPaintStyle.Stroke;
+  Part.StrokeWidth := 1.8;
+  HullParts[2] := Part;
+
+  // Part 3: Left landing leg
+  Part.Path := BuildCraftPath([
+    PointF(3, 36),
+    PointF(0, 42),
+    PointF(7, 42)
+  ], Pivot, False);
+  Part.Color := $FF808080;  // Dark gray
+  Part.Style := TSkPaintStyle.Stroke;
+  Part.StrokeWidth := 1.5;
+  HullParts[3] := Part;
+
+  // Part 4: Right landing leg
+  Part.Path := BuildCraftPath([
+    PointF(29, 36),
+    PointF(32, 42),
+    PointF(25, 42)
+  ], Pivot, False);
+  Part.Color := $FF808080;  // Dark gray
+  Part.Style := TSkPaintStyle.Stroke;
+  Part.StrokeWidth := 1.5;
+  HullParts[4] := Part;
+
+  Result.HullParts := HullParts;
+
+  // Thrust offset (center bottom of body)
+  Result.ThrustOffset := PivotOffset(PointF(16, 38), Pivot);
+
+  // RCS offsets (left and right sides, mid-body height)
+  SetLength(RCSOffsets, 2);
+  RCSOffsets[0] := PivotOffset(PointF(3, 19), Pivot);
+  RCSOffsets[1] := PivotOffset(PointF(29, 19), Pivot);
+  Result.RCSOffsets := RCSOffsets;
+
+  // Effect sizes
+  Result.PlumeLength := 14.0;
+  Result.PlumeWidth := 7.0;
+  Result.RCSRadius := 4.0;
+  Result.PlumeColor := $FFFF8800;  // Orange
+
+  // Physics (same as basic lander for now — tweak as desired)
+  Result.Mass := 1.0;
+  Result.ThrustPower := 2.8;
+  Result.FuelCapacity := 100;
+  Result.BurnRate := 0.3;
+  Result.RCSFuelCapacity := 50;
+  Result.RCSBurnRate := 0.2;
+  Result.RCSThrust := 0.5;
+  Result.HasSAS := True;
+  Result.HasThrottleControl := True;
+
+  // Collision path (outer boundary)
+  Result.CollisionPath := BuildCraftPath([
+    PointF(16, 0),     // Top of dome
+    PointF(27, 18),    // Dome meets body top-right
+    PointF(29, 36),    // Body bottom-right
+    PointF(32, 42),    // Right leg tip
+    PointF(0, 42),     // Left leg tip
+    PointF(3, 36),     // Body bottom-left
+    PointF(5, 18)      // Dome meets body top-left
+  ], Pivot, True);
+
+  // Collision points
+  Result.CollisionPoints := TPointFArray.Create(
+    PivotOffset(PointF(16, 0), Pivot),
+    PivotOffset(PointF(27, 18), Pivot),
+    PivotOffset(PointF(29, 36), Pivot),
+    PivotOffset(PointF(32, 42), Pivot),
+    PivotOffset(PointF(0, 42), Pivot),
+    PivotOffset(PointF(3, 36), Pivot),
+    PivotOffset(PointF(5, 18), Pivot));
+end;
+
 
 end.
