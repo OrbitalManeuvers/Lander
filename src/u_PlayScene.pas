@@ -20,11 +20,15 @@ type
     fFontManager: TFontManager;
     fViewport: TViewport;
     fTime: Single;
+    fFlightTime: Single;  // Elapsed flight time in seconds
     fCameraX: Single;  // Current camera center X (lazy-follows craft)
     fCameraGroundY: Single;  // Locked ground Y when entering zoomed-in mode
     fZoomedIn: Boolean;  // True = landing view, False = full terrain view
     fOutcome: TPlayOutcome;
     fReturnScene: TSceneID;  // Where to go on ESC (menu or editor)
+
+    // Crash respawn state
+    fCrashTimer: Single;  // Countdown after crash before respawn (0 = not crashing)
 
     // Pause state
     fPaused: Boolean;
@@ -34,7 +38,8 @@ type
     function GetTransformedHull: TPointFArray;
     procedure RenderPauseOverlay(const aCanvas: ISkCanvas; aWidth, aHeight: Integer);
   public
-    constructor Create(const aScenario: TScenario; aReturnScene: TSceneID);
+    constructor Create(const aScenario: TScenario; aReturnScene: TSceneID;
+      aScoreKeeper: TScoreKeeper);
     destructor Destroy; override;
     function RequiredLayout: TLayoutMode; override;
 
@@ -57,14 +62,17 @@ uses
 
 { TPlayScene }
 
-constructor TPlayScene.Create(const aScenario: TScenario; aReturnScene: TSceneID);
+constructor TPlayScene.Create(const aScenario: TScenario; aReturnScene: TSceneID;
+  aScoreKeeper: TScoreKeeper);
 begin
   inherited Create;
   fScenario := aScenario;
   fReturnScene := aReturnScene;
   fRenderer := TFlightRenderer.Create;
-  fScoreKeeper := TScoreKeeper.Create;
+  fScoreKeeper := aScoreKeeper;  // Borrowed reference, not owned
   fTime := 0;
+  fFlightTime := 0;
+  fCrashTimer := 0;
 
   // Pre-build terrain paths for rendering
   fRenderer.SetTerrain(fScenario.World.Terrain, fScenario.World.Pads);
@@ -87,7 +95,6 @@ begin
   fPanelRenderer.Free;
   fFontManager.Free;
   fRenderer.Free;
-  fScoreKeeper.Free;
   inherited;
 end;
 
@@ -197,11 +204,40 @@ begin
   if fPaused then
     Exit;
 
+  // Handle crash delay timer (craft is dead, waiting to respawn or game over)
+  if fCrashTimer > 0 then
+  begin
+    fCrashTimer := fCrashTimer - 0.05;
+    fTime := fTime + 1.0;
+    if fCrashTimer <= 0 then
+    begin
+      fCrashTimer := 0;
+      if fScoreKeeper.IsGameOver then
+      begin
+        // No lives left — go to result scene
+        fPanelRenderer.UpdateChrome(fFlightTime, fScoreKeeper.Lives, fScoreKeeper.Score);
+        fPanelRenderer.CaptureSnapshot(fCraftState,
+          CalcAltitude(fCraftState.X, fCraftState.Y, fScenario.World));
+        SetFinished(sidResult);
+      end
+      else
+      begin
+        // Respawn: reset craft state, unfreeze panel, resume flight
+        InitCraftState;
+        fPanelRenderer.Unfreeze;
+        fZoomedIn := False;
+        fCameraX := fScenario.Start.X;
+      end;
+    end;
+    Exit;
+  end;
+
   if not fCraftState.Alive then
     Exit;
 
   // Increment time for starfield animation
   fTime := fTime + 1.0;
+  fFlightTime := fFlightTime + 0.05;
 
   // Run physics simulation (delta=1.0 since physics is per-tick)
 //  PhysicsTick(fCraftState, fScenario.Craft, fScenario.World, 1.0);
@@ -209,6 +245,7 @@ begin
 
   // Update panel renderer with current state (after physics, before collision)
   fPanelRenderer.UpdateState(fCraftState);
+  fPanelRenderer.UpdateChrome(fFlightTime, fScoreKeeper.Lives, fScoreKeeper.Score);
 
   // Transform hull vertices to world space for collision testing
   HullPoints := GetTransformedHull;
@@ -247,13 +284,14 @@ begin
 
       fOutcome.LivesRemaining := fScoreKeeper.Lives;
       fCraftState.Alive := False;
+      fPanelRenderer.UpdateChrome(fFlightTime, fScoreKeeper.Lives, fScoreKeeper.Score);
       fPanelRenderer.CaptureSnapshot(fCraftState,
         CalcAltitude(fCraftState.X, fCraftState.Y, fScenario.World));
       SetFinished(sidResult);
     end
     else
     begin
-      // Crash — decrement lives and compute outcome
+      // Crash — decrement lives and start crash delay
       fScoreKeeper.ApplyCrash;
 
       fOutcome := Default(TPlayOutcome);
@@ -267,9 +305,8 @@ begin
       fOutcome.LivesRemaining := fScoreKeeper.Lives;
 
       fCraftState.Alive := False;
-      fPanelRenderer.CaptureSnapshot(fCraftState,
-        CalcAltitude(fCraftState.X, fCraftState.Y, fScenario.World));
-      SetFinished(sidResult);
+      fCrashTimer := 2.0;  // 2 second delay before respawn/game over
+      fPanelRenderer.UpdateChrome(fFlightTime, fScoreKeeper.Lives, fScoreKeeper.Score);
     end;
   end;
 end;

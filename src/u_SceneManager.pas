@@ -4,7 +4,7 @@ interface
 
 uses System.Classes,
   System.SysUtils, System.Skia, Vcl.Controls, Vcl.ExtCtrls, Vcl.Skia,
-  u_Models, u_SceneBase, u_Scenarios;
+  u_Models, u_SceneBase, u_Scenarios, u_Scoring;
 
 type
   // Persistent cross-scene state that survives scene transitions.
@@ -12,10 +12,12 @@ type
   TSessionContext = class
   private
     fScenario: TScenario;         // The scenario selected on the menu
+    fScoreKeeper: TScoreKeeper;   // Persists across play/result transitions
     fEditorWorld: TWorldProfile;   // Editor's working world (unsaved edits survive play)
     fEditorFilePath: string;       // File path for save operations
     fReturnScene: TSceneID;       // Where play should exit to (menu or editor)
   public
+    constructor Create;
     destructor Destroy; override;
     procedure Clear;
 
@@ -23,6 +25,7 @@ type
     function TakeEditorWorld: TWorldProfile;
 
     property Scenario: TScenario read fScenario write fScenario;
+    property ScoreKeeper: TScoreKeeper read fScoreKeeper;
     property EditorWorld: TWorldProfile read fEditorWorld write fEditorWorld;
     property EditorFilePath: string read fEditorFilePath write fEditorFilePath;
     property ReturnScene: TSceneID read fReturnScene write fReturnScene;
@@ -77,12 +80,19 @@ uses
 
 { TSessionContext }
 
+constructor TSessionContext.Create;
+begin
+  inherited Create;
+  fScoreKeeper := TScoreKeeper.Create;
+end;
+
 destructor TSessionContext.Destroy;
 begin
   if fScenario.World <> fEditorWorld then
     fScenario.World.Free;
   fScenario.Craft.Free;
   fEditorWorld.Free;
+  fScoreKeeper.Free;
   inherited;
 end;
 
@@ -96,6 +106,7 @@ begin
   fScenario := Default(TScenario);
   fEditorFilePath := '';
   fReturnScene := sidMenu;
+  fScoreKeeper.Reset;
 end;
 
 function TSessionContext.TakeEditorWorld: TWorldProfile;
@@ -242,7 +253,8 @@ begin
           else
             Scenario.Craft := TScenarioBuilder.BuildBubbleCraft;
         end;
-        fCurrentScene := TPlayScene.Create(Scenario, fSession.ReturnScene);
+        fCurrentScene := TPlayScene.Create(Scenario, fSession.ReturnScene,
+          fSession.ScoreKeeper);
       end;
 
     sidResult:
@@ -283,7 +295,8 @@ begin
     sidMenu:
       Result := TMenuScene.Create;
     sidPlay:
-      Result := TPlayScene.Create(TScenarioBuilder.BuildDefault, sidMenu);
+      Result := TPlayScene.Create(TScenarioBuilder.BuildDefault, sidMenu,
+        fSession.ScoreKeeper);
     sidResult:
       Result := TResultScene.Create(Default(TPlayOutcome), sidMenu);
     sidEditor:

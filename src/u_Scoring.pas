@@ -70,7 +70,7 @@ end;
 
 procedure TScoreKeeper.Reset;
 begin
-  fScore := 0;
+  // Score persists — only reset lives
   fLives := MaxLives;
 end;
 
