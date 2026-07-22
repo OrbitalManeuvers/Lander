@@ -1,4 +1,4 @@
-unit u_Serialization;
+﻿unit u_Serialization;
 
 interface
 
@@ -10,10 +10,10 @@ uses System.JSON,
 type
   TCraftHelper = class helper for TCraftProfile
   private
-    function GetJSON: TJSONObject;
+//    function GetJSON: TJSONObject;
     procedure SetJSON(const Value: TJSONObject);
   public
-    property AsJSON: TJSONObject read GetJSON write SetJSON;
+    property AsJSON: TJSONObject write SetJSON;
   end;
 
   TWorldHelper = class helper for TWorldProfile
@@ -130,6 +130,13 @@ type
     property AsJSON: TJSONArray read GetJSON write SetJSON;
   end;
 
+  TPointFArrayHelper = record helper for TPointFArray
+  private
+    function GetJSON: TJSONArray;
+    procedure SetJSON(const Value: TJSONArray);
+  public
+    property AsJSON: TJSONArray read GetJSON write SetJSON;
+  end;
 
 { Standalone world I/O }
 
@@ -278,6 +285,37 @@ begin
   end;
 end;
 
+{ TPointFArrayHelper }
+
+function TPointFArrayHelper.GetJSON: TJSONArray;
+var
+  i: Integer;
+  obj: TJSONObject;
+begin
+  Result := TJSONArray.Create;
+  for i := 0 to High(Self) do
+  begin
+    obj := TJSONObject.Create;
+    obj.AddPair(KEY_X, TJSONNumber.Create(Self[i].X));
+    obj.AddPair(KEY_Y, TJSONNumber.Create(Self[i].Y));
+    Result.AddElement(obj);
+  end;
+end;
+
+procedure TPointFArrayHelper.SetJSON(const Value: TJSONArray);
+var
+  i: Integer;
+  obj: TJSONObject;
+begin
+  SetLength(Self, Value.Count);
+  for i := 0 to Value.Count - 1 do
+  begin
+    obj := Value.Items[i] as TJSONObject;
+    Self[i] := PointF(obj.FloatValue(KEY_X), obj.FloatValue(KEY_Y));
+  end;
+end;
+
+
 
 { TCraftHelper }
 
@@ -287,26 +325,13 @@ var
 begin
   Self.Name := Value.StrValue(KEY_NAME);
 
+
   if Value.TryGetValue(KEY_RCS_OFFSETS, jArr) then
-  begin
-    var rcs: TTerrainArray;
-    rcs := nil;
-    rcs.AsJSON := jArr;
-    Self.RCSOffsets := TPointFArray(rcs);
-  end;
+    Self.RCSOffsets.AsJSON := jArr;
 
   //
 
 end;
-
-function TCraftHelper.GetJSON: TJSONObject;
-begin
-  Result := TJSONObject.Create;
-  Result.AddPair(KEY_NAME, Self.Name);
-
-
-end;
-
 
 { TWorldHelper }
 

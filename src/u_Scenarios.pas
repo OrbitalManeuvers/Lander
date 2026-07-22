@@ -6,6 +6,9 @@ uses
   System.Types, System.UITypes, System.Skia,
   u_Models;
 
+{.DEFINE BasicLander}
+{$DEFINE BubbleCraft}
+
 type
   // Initial conditions for the craft at mission start.
   TStartConditions = record
@@ -36,6 +39,7 @@ type
     // Returns the default v1 scenario (Moon + basic lander).
     class function BuildDefault: TScenario;
     class function BuildBubbleCraft: TCraftProfile;
+    class function BuildBasicLander: TCraftProfile;
   end;
 
 implementation
@@ -47,12 +51,6 @@ class function TScenarioBuilder.BuildDefault: TScenario;
 var
   Terrain: TTerrainArray;
   Pads: TPadArray;
-{$ifdef false}
-  Part: TCraftPart;
-  Pivot: TPointF;
-  HullParts: TCraftPartArray;
-  RCSOffsets: TPointFArray;
-{$endif}
 begin
   Result.WorldID := 'moon';
   Result.CraftID := 'basicLander';
@@ -116,11 +114,34 @@ begin
   Result.World.Pads := Pads;
 
   // --- Build Craft Profile ---
+{$ifdef BubbleCraft}
   Result.Craft := BuildBubbleCraft;
+{$else}
+  Result.Craft := BuildBasicLander;
+{$endif}
 
-{$ifdef false}
-  Result.Craft := TCraftProfile.Create;
-  Result.Craft.Name := 'Basic Lander';
+  // --- Landing Criteria ---
+  Result.Criteria.MaxSpeed := 3.0;
+  Result.Criteria.MaxAngle := 15.0;   // Degrees
+
+  // --- Start Conditions ---
+  Result.Start.X := 0;    // Center of terrain
+  Result.Start.Y := 400;    // Just above terrain (terrain starts ~880)
+  Result.Start.VX := 20.2;
+  Result.Start.VY := 0;
+  Result.Start.Angle := -90;
+end;
+
+
+class function TScenarioBuilder.BuildBasicLander: TCraftProfile;
+var
+  Part: TCraftPart;
+  Pivot: TPointF;
+  HullParts: TCraftPartArray;
+  RCSOffsets: TPointFArray;
+begin
+  Result := TCraftProfile.Create;
+  Result.Name := 'Basic Lander';
 
   // Pivot: center of rotation in grid space (craft is 28 wide × 45 tall)
   Pivot := PointF(14, 22.5);
@@ -174,35 +195,35 @@ begin
   Part.StrokeWidth := 1.5;
   HullParts[3] := Part;
 
-  Result.Craft.HullParts := HullParts;
+  Result.HullParts := HullParts;
 
   // Offsets (grid space, pivot-centered)
-  Result.Craft.ThrustOffset := PivotOffset(PointF(14, 40), Pivot);
+  Result.ThrustOffset := PivotOffset(PointF(14, 40), Pivot);
 
   SetLength(RCSOffsets, 2);
   RCSOffsets[0] := PivotOffset(PointF(0, 20), Pivot);
   RCSOffsets[1] := PivotOffset(PointF(28, 20), Pivot);
-  Result.Craft.RCSOffsets := RCSOffsets;
+  Result.RCSOffsets := RCSOffsets;
 
   // Effect sizes (in craft units)
-  Result.Craft.PlumeLength := 16.0;
-  Result.Craft.PlumeWidth := 6.0;
-  Result.Craft.RCSRadius := 4.0;
-  Result.Craft.PlumeColor := $FFFF8800;  // Orange
+  Result.PlumeLength := 16.0;
+  Result.PlumeWidth := 6.0;
+  Result.RCSRadius := 4.0;
+  Result.PlumeColor := $FFFF8800;  // Orange
 
   // Physics parameters
-  Result.Craft.Mass := 1.0;
-  Result.Craft.ThrustPower := 2.8;
-  Result.Craft.FuelCapacity := 100;
-  Result.Craft.BurnRate := 0.3;
-  Result.Craft.RCSFuelCapacity := 50;
-  Result.Craft.RCSBurnRate := 0.2;
-  Result.Craft.RCSThrust := 0.5;
-  Result.Craft.HasSAS := True;
-  Result.Craft.HasThrottleControl := True;
+  Result.Mass := 1.0;
+  Result.ThrustPower := 2.8;
+  Result.FuelCapacity := 100;
+  Result.BurnRate := 0.3;
+  Result.RCSFuelCapacity := 50;
+  Result.RCSBurnRate := 0.2;
+  Result.RCSThrust := 0.5;
+  Result.HasSAS := True;
+  Result.HasThrottleControl := True;
 
   // Collision path (simplified outer boundary, grid space)
-  Result.Craft.CollisionPath := BuildCraftPath([
+  Result.CollisionPath := BuildCraftPath([
     PointF(14, 0),
     PointF(26, 18),
     PointF(24, 38),
@@ -214,7 +235,7 @@ begin
 
   // Collision points: same vertices as collision path, pivot-centered.
   // Used directly by the play scene for hull collision testing.
-  Result.Craft.CollisionPoints := TPointFArray.Create(
+  Result.CollisionPoints := TPointFArray.Create(
     PivotOffset(PointF(14, 0), Pivot),
     PivotOffset(PointF(26, 18), Pivot),
     PivotOffset(PointF(24, 38), Pivot),
@@ -222,20 +243,7 @@ begin
     PivotOffset(PointF(0, 45), Pivot),
     PivotOffset(PointF(4, 38), Pivot),
     PivotOffset(PointF(2, 18), Pivot));
-{$endif}
-
-  // --- Landing Criteria ---
-  Result.Criteria.MaxSpeed := 3.0;
-  Result.Criteria.MaxAngle := 15.0;   // Degrees
-
-  // --- Start Conditions ---
-  Result.Start.X := 0;    // Center of terrain
-  Result.Start.Y := 400;    // Just above terrain (terrain starts ~880)
-  Result.Start.VX := 20.2;
-  Result.Start.VY := 0;
-  Result.Start.Angle := -90;
 end;
-
 
 class function TScenarioBuilder.BuildBubbleCraft: TCraftProfile;
 var

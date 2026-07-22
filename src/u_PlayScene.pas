@@ -363,20 +363,27 @@ begin
     fViewport.ViewLeft := fCameraX - ViewWidth / 2;
     fViewport.ViewRight := fCameraX + ViewWidth / 2;
 
-    // Clamp to terrain edges.
+    // Clamp to terrain edges and reconcile camera X.
     if fViewport.ViewLeft < TerrainVP.ViewLeft then
     begin
       fViewport.ViewLeft := TerrainVP.ViewLeft;
       fViewport.ViewRight := TerrainVP.ViewLeft + ViewWidth;
+      fCameraX := fViewport.ViewLeft + ViewWidth / 2;
     end;
     if fViewport.ViewRight > TerrainVP.ViewRight then
     begin
       fViewport.ViewRight := TerrainVP.ViewRight;
       fViewport.ViewLeft := TerrainVP.ViewRight - ViewWidth;
+      fCameraX := fViewport.ViewLeft + ViewWidth / 2;
     end;
 
-    // Vertical: locked to the ground level captured on zoom-in entry.
-    // The viewport is fixed — terrain never moves vertically.
+    // Vertical: track downward if craft approaches viewport bottom.
+    // Camera only pans down (never up — upward escape triggers zoom-out).
+    var BottomLimit: Single;
+    BottomLimit := fCameraGroundY + 50 - 40;  // 40 units above viewport bottom edge
+    if fCraftState.Y > BottomLimit then
+      fCameraGroundY := fCraftState.Y - 50 + 40;
+
     fViewport.ViewBottom := fCameraGroundY + 50;
     fViewport.ViewTop := fViewport.ViewBottom - ViewHeight;
   end;
