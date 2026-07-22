@@ -9,6 +9,9 @@ type
   // Key state passed to HandleInput.
   TKeyState = (ksDown, ksUp);
 
+  // Layout mode for the form surfaces.
+  TLayoutMode = (lmFullWindow, lmLeftPanel, lmBottomPanel);
+
   // Abstract base class for all game scenes.
   // Scenes own their own logic, rendering, and exit/entrance animations.
   TGameScene = class abstract
@@ -18,6 +21,9 @@ type
   protected
     procedure SetFinished(ANextSceneID: TSceneID);
   public
+
+    function RequiredLayout: TLayoutMode; virtual; abstract;
+
     // Receives key events forwarded from the form.
     procedure HandleInput(AKeyCode: Word; AKeyState: TKeyState); virtual; abstract;
 

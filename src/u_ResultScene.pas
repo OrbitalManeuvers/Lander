@@ -22,6 +22,7 @@ type
   public
     constructor Create(const aOutcome: TPlayOutcome; aReturnScene: TSceneID);
     destructor Destroy; override;
+    function RequiredLayout: TLayoutMode; override;
 
     procedure HandleInput(aKeyCode: Word; aKeyState: TKeyState); override;
     procedure Tick; override;
@@ -220,6 +221,11 @@ begin
     Rect := RectF(0, 0, aWidth, aHeight);
     aCanvas.DrawRect(Rect, Paint);
   end;
+end;
+
+function TResultScene.RequiredLayout: TLayoutMode;
+begin
+  Result := lmBottomPanel;
 end;
 
 end.

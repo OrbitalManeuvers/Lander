@@ -1,4 +1,4 @@
-unit u_EditorScene;
+﻿unit u_EditorScene;
 
 interface
 
@@ -31,6 +31,7 @@ type
     constructor Create(const aFilePath: string); overload;
     constructor Create(const aFilePath: string; aWorld: TWorldProfile); overload;
     destructor Destroy; override;
+    function RequiredLayout: TLayoutMode; override;
 
     procedure HandleInput(aKeyCode: Word; aKeyState: TKeyState); override;
     procedure Tick; override;
@@ -736,6 +737,11 @@ begin
   // Dirty indicator
   if fDirty then
     DrawLine('* UNSAVED', TAlphaColors.Red, fontNormal);
+end;
+
+function TEditorScene.RequiredLayout: TLayoutMode;
+begin
+  Result := lmLeftPanel;
 end;
 
 end.

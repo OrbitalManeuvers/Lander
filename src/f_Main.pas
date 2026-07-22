@@ -12,17 +12,21 @@ uses
 type
   TMainForm = class(TForm)
     GameTimer: TTimer;
-    PBFlight: TSkAnimatedPaintBox;
-    PBPanel: TSkAnimatedPaintBox;
+    MainView: TSkAnimatedPaintBox;
+    LeftView: TSkAnimatedPaintBox;
+    BottomView: TSkAnimatedPaintBox;
     procedure GameTimerTick(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure FormKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState);
-    procedure PBFlightAnimationDraw(ASender: TObject; const ACanvas: ISkCanvas;
+    procedure MainViewAnimationDraw(ASender: TObject; const ACanvas: ISkCanvas;
       const ADest: TRectF; const AProgress: Double; const AOpacity: Single);
-    procedure PBPanelAnimationDraw(ASender: TObject; const ACanvas: ISkCanvas;
+    procedure LeftViewAnimationDraw(ASender: TObject; const ACanvas: ISkCanvas;
       const ADest: TRectF; const AProgress: Double; const AOpacity: Single);
+    procedure BottomViewAnimationDraw(ASender: TObject;
+      const ACanvas: ISkCanvas; const ADest: TRectF; const AProgress: Double;
+      const AOpacity: Single);
   private
     fSceneManager: TSceneManager;
     fTime: Single;
@@ -48,8 +52,9 @@ begin
 
   fTime := 0.0;
   HandleLayoutChange(nil);
-  PBFlight.ControlStyle := PBFlight.ControlStyle + [csOpaque];
-  PBPanel.ControlStyle := PBPanel.ControlStyle + [csOpaque];
+  MainView.ControlStyle := MainView.ControlStyle + [csOpaque];
+  LeftView.ControlStyle := LeftView.ControlStyle + [csOpaque];
+  BottomView.ControlStyle := BottomView.ControlStyle + [csOpaque];
 
   fSceneManager.Start(sidMenu);
 
@@ -79,22 +84,32 @@ end;
 
 procedure TMainForm.HandleLayoutChange(Sender: TObject);
 begin
-  PBPanel.Visible := fSceneManager.LayoutMode = lmPanelAndFlight;
+  LeftView.Visible := fSceneManager.LayoutMode = lmLeftPanel;
+  BottomView.Visible := fSceneManager.LayoutMode = lmBottomPanel;
 end;
 
-procedure TMainForm.PBFlightAnimationDraw(ASender: TObject; const ACanvas: ISkCanvas;
+procedure TMainForm.MainViewAnimationDraw(ASender: TObject; const ACanvas: ISkCanvas;
   const ADest: TRectF; const AProgress: Double; const AOpacity: Single);
 begin
   if Assigned(fSceneManager) then
     fSceneManager.Render(ACanvas, Round(aDest.Width), Round(ADest.Height));
 end;
 
-procedure TMainForm.PBPanelAnimationDraw(ASender: TObject;
+procedure TMainForm.LeftViewAnimationDraw(ASender: TObject;
   const ACanvas: ISkCanvas; const ADest: TRectF; const AProgress: Double;
   const AOpacity: Single);
 begin
-  if Assigned(fSceneManager) then
+  if Assigned(fSceneManager) and (ASender as TControl).Visible then
     fSceneManager.RenderPanel(aCanvas, Round(aDest.Width), Round(ADest.Height));
 end;
+
+procedure TMainForm.BottomViewAnimationDraw(ASender: TObject;
+  const ACanvas: ISkCanvas; const ADest: TRectF; const AProgress: Double;
+  const AOpacity: Single);
+begin
+  if Assigned(fSceneManager) and (ASender as TControl).Visible then
+    fSceneManager.RenderPanel(aCanvas, Round(aDest.Width), Round(ADest.Height));
+end;
+
 
 end.

@@ -33,6 +33,7 @@ type
   public
     constructor Create(const aScenario: TScenario; aReturnScene: TSceneID);
     destructor Destroy; override;
+    function RequiredLayout: TLayoutMode; override;
 
     procedure HandleInput(aKeyCode: Word; aKeyState: TKeyState); override;
     procedure Tick; override;
@@ -413,6 +414,11 @@ begin
   Font.MeasureText('ESC = Exit    C = Continue', TextBounds, Paint);
   TextX := (aWidth - TextBounds.Width) / 2;
   aCanvas.DrawSimpleText('ESC = Exit    C = Continue', TextX, aHeight * 0.52, Font, Paint);
+end;
+
+function TPlayScene.RequiredLayout: TLayoutMode;
+begin
+  Result := lmBottomPanel;
 end;
 
 end.

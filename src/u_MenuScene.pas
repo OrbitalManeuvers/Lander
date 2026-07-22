@@ -58,6 +58,7 @@ type
   public
     constructor Create;
     destructor Destroy; override;
+    function RequiredLayout: TLayoutMode; override;
 
     procedure HandleInput(AKeyCode: Word; AKeyState: TKeyState); override;
     procedure Tick; override;
@@ -455,6 +456,11 @@ begin
     Rect := RectF(0, 0, AWidth, AHeight);
     ACanvas.DrawRect(Rect, Paint);
   end;
+end;
+
+function TMenuScene.RequiredLayout: TLayoutMode;
+begin
+  Result := lmFullWindow;
 end;
 
 end.

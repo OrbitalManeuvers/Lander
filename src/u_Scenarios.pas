@@ -45,12 +45,14 @@ uses
 
 class function TScenarioBuilder.BuildDefault: TScenario;
 var
-  Part: TCraftPart;
-  Pivot: TPointF;
   Terrain: TTerrainArray;
   Pads: TPadArray;
+{$ifdef false}
+  Part: TCraftPart;
+  Pivot: TPointF;
   HullParts: TCraftPartArray;
   RCSOffsets: TPointFArray;
+{$endif}
 begin
   Result.WorldID := 'moon';
   Result.CraftID := 'basicLander';

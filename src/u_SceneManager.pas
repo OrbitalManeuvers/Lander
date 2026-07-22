@@ -7,9 +7,6 @@ uses System.Classes,
   u_Models, u_SceneBase, u_Scenarios;
 
 type
-  // Layout mode for the form surfaces.
-  TLayoutMode = (lmFullWindow, lmPanelAndFlight);
-
   // Persistent cross-scene state that survives scene transitions.
   // Owned by the scene manager; scenes read/write through it.
   TSessionContext = class
@@ -45,7 +42,6 @@ type
     procedure ApplyLayout(aMode: TLayoutMode);
     procedure TransitionToScene(aSceneID: TSceneID);
     function CreateScene(aSceneID: TSceneID): TGameScene;
-    function GetSceneLayout(aSceneID: TSceneID): TLayoutMode;
   public
     constructor Create;
     destructor Destroy; override;
@@ -128,8 +124,8 @@ end;
 procedure TSceneManager.Start(aInitialSceneID: TSceneID);
 begin
   FreeAndNil(fCurrentScene);
-  ApplyLayout(GetSceneLayout(aInitialSceneID));
   fCurrentScene := CreateScene(aInitialSceneID);
+  ApplyLayout(fCurrentScene.RequiredLayout);
 end;
 
 procedure TSceneManager.Tick;
@@ -210,9 +206,6 @@ begin
   // Destroy current scene (screen is guaranteed black at this point)
   FreeAndNil(fCurrentScene);
 
-  // Reconfigure layout
-  ApplyLayout(GetSceneLayout(aSceneID));
-
   // --- Create new scene ---
   case aSceneID of
     sidMenu:
@@ -252,18 +245,11 @@ begin
   else
     fCurrentScene := nil;
   end;
-end;
 
-function TSceneManager.GetSceneLayout(aSceneID: TSceneID): TLayoutMode;
-begin
-  case aSceneID of
-    sidMenu:
-      Result := lmFullWindow;
-    sidPlay, sidResult, sidEditor:
-      Result := lmPanelAndFlight;
-  else
-    Result := lmFullWindow;
-  end;
+  // Reconfigure layout
+  if Assigned(fCurrentScene) then
+    ApplyLayout(fCurrentScene.RequiredLayout);
+
 end;
 
 procedure TSceneManager.ApplyLayout(aMode: TLayoutMode);
