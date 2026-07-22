@@ -4,7 +4,7 @@ interface
 
 uses
   System.Types, System.UITypes, System.SysUtils, System.Skia,
-  u_Models, u_SceneBase, u_FlightRenderer;
+  u_Models, u_SceneBase, u_FlightRenderer, u_PanelRenderer;
 
 type
   // Displays landing/crash outcome with score breakdown.
@@ -13,6 +13,7 @@ type
   private
     fOutcome: TPlayOutcome;
     fRenderer: TFlightRenderer;
+    fPanelRenderer: TPanelRenderer;  // Borrowed reference (owned by PlayScene/manager)
     fTime: Single;
     fFadeAlpha: Single;   // 0 = fully visible, 1 = fully black
     fExiting: Boolean;    // True when fade-out triggered
@@ -20,13 +21,15 @@ type
 
     procedure UpdateFade;
   public
-    constructor Create(const aOutcome: TPlayOutcome; aReturnScene: TSceneID);
+    constructor Create(const aOutcome: TPlayOutcome; aReturnScene: TSceneID;
+      aPanelRenderer: TPanelRenderer = nil);
     destructor Destroy; override;
     function RequiredLayout: TLayoutMode; override;
 
     procedure HandleInput(aKeyCode: Word; aKeyState: TKeyState); override;
     procedure Tick; override;
     procedure Render(const aCanvas: ISkCanvas; aWidth, aHeight: Integer); override;
+    procedure RenderPanel(const aCanvas: ISkCanvas; aWidth, aHeight: Integer); override;
   end;
 
 implementation
@@ -40,11 +43,13 @@ const
 
 { TResultScene }
 
-constructor TResultScene.Create(const aOutcome: TPlayOutcome; aReturnScene: TSceneID);
+constructor TResultScene.Create(const aOutcome: TPlayOutcome; aReturnScene: TSceneID;
+  aPanelRenderer: TPanelRenderer = nil);
 begin
   inherited Create;
   fOutcome := aOutcome;
   fReturnScene := aReturnScene;
+  fPanelRenderer := aPanelRenderer;
   fRenderer := TFlightRenderer.Create;
   fTime := 0;
   fFadeAlpha := 1.0;  // Start fully black (entrance fade-in)
@@ -53,6 +58,7 @@ end;
 
 destructor TResultScene.Destroy;
 begin
+  fPanelRenderer.Free;
   fRenderer.Free;
   inherited;
 end;
@@ -226,6 +232,12 @@ end;
 function TResultScene.RequiredLayout: TLayoutMode;
 begin
   Result := lmBottomPanel;
+end;
+
+procedure TResultScene.RenderPanel(const aCanvas: ISkCanvas; aWidth, aHeight: Integer);
+begin
+  if Assigned(fPanelRenderer) then
+    fPanelRenderer.RenderPanel(aCanvas, Single(aWidth), Single(aHeight));
 end;
 
 end.

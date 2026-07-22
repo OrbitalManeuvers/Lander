@@ -223,8 +223,8 @@ begin
   end;
 
   // Add a small margin (5% of range) so terrain doesn't clip against edges.
-  MarginX := (MaxX - MinX) * 0.05;
-  MarginY := (MaxY - MinY) * 0.05;
+  MarginX := (MaxX - MinX) * 0.00;
+  MarginY := (MaxY - MinY) * 0.00;
 
   Result.ViewLeft := MinX - MarginX;
   Result.ViewRight := MaxX + MarginX;
@@ -417,7 +417,7 @@ begin
 
   // Fill entire canvas with black (provides the letterbox/pillarbox bars).
   Paint := TSkPaint.Create;
-  Paint.Color := TAlphaColors.Black; // Darkslateblue;
+  Paint.Color := TAlphaColors.Darkslateblue;
   Paint.Style := TSkPaintStyle.Fill;
   aCanvas.DrawRect(RectF(0, 0, aCanvasWidth, aCanvasHeight), Paint);
 

@@ -340,12 +340,33 @@ begin
   Result.Mass := 1.0;
   Result.ThrustPower := 2.8;
   Result.FuelCapacity := 100;
-  Result.BurnRate := 0.3;
+  Result.BurnRate := 1.3;
   Result.RCSFuelCapacity := 50;
   Result.RCSBurnRate := 0.2;
   Result.RCSThrust := 0.5;
   Result.HasSAS := True;
   Result.HasThrottleControl := True;
+
+  // Panel font
+  Result.PanelFontFamily := 'Share Tech Mono';
+
+  // Landing criteria (used by panel widgets for color thresholds)
+  var Crit: TLandingCriteria;
+  Crit.MaxSpeed := 3.0;
+  Crit.MaxAngle := 15.0;
+  Result.LandingCriteria := Crit;
+
+  // Instruments: all kinds for testing
+  var Instr: TInstrumentArray;
+  SetLength(Instr, 7);
+  Instr[0].Kind := ikFuelGauge;
+  Instr[1].Kind := ikRCSGauge;
+  Instr[2].Kind := ikVelocity;
+  Instr[3].Kind := ikAltimeter;
+  Instr[4].Kind := ikAttitude;
+  Instr[5].Kind := ikSASIndicator;
+  Instr[6].Kind := ikLandingGuidance;
+  Result.Instruments := Instr;
 
   // Collision path (outer boundary)
   Result.CollisionPath := BuildCraftPath([

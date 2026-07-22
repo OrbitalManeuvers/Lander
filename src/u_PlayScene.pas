@@ -4,7 +4,8 @@ interface
 
 uses
   System.Types, System.UITypes, System.Skia, Winapi.Windows,
-  u_Models, u_SceneBase, u_FlightRenderer, u_Scenarios, u_Scoring;
+  u_Models, u_SceneBase, u_FlightRenderer, u_Scenarios, u_Scoring,
+  u_PanelRenderer, u_FontManager;
 
 type
   // Core gameplay scene: physics simulation, terrain rendering,
@@ -15,6 +16,8 @@ type
     fCraftState: TCraftState;
     fRenderer: TFlightRenderer;
     fScoreKeeper: TScoreKeeper;
+    fPanelRenderer: TPanelRenderer;
+    fFontManager: TFontManager;
     fViewport: TViewport;
     fTime: Single;
     fCameraX: Single;  // Current camera center X (lazy-follows craft)
@@ -38,14 +41,19 @@ type
     procedure HandleInput(aKeyCode: Word; aKeyState: TKeyState); override;
     procedure Tick; override;
     procedure Render(const aCanvas: ISkCanvas; aWidth, aHeight: Integer); override;
+    procedure RenderPanel(const aCanvas: ISkCanvas; aWidth, aHeight: Integer); override;
 
     property Outcome: TPlayOutcome read fOutcome;
+    property PanelRenderer: TPanelRenderer read fPanelRenderer;
+
+    // Transfers ownership of the panel renderer to the caller.
+    function DetachPanelRenderer: TPanelRenderer;
   end;
 
 implementation
 
 uses
-  System.Math, u_Physics, u_Terrain, u_Landing;
+  System.SysUtils, System.Math, u_Physics, u_Terrain, u_Landing;
 
 { TPlayScene }
 
@@ -66,10 +74,18 @@ begin
 
   // Camera starts centered on the craft's starting X position.
   fCameraX := fScenario.Start.X;
+
+  // Initialize panel renderer
+  fFontManager := TFontManager.Create;
+  fFontManager.RegisterFonts(ExtractFilePath(ParamStr(0)));
+  fPanelRenderer := TPanelRenderer.Create;
+  fPanelRenderer.Init(fScenario.Craft, fScenario.World, fFontManager);
 end;
 
 destructor TPlayScene.Destroy;
 begin
+  fPanelRenderer.Free;
+  fFontManager.Free;
   fRenderer.Free;
   fScoreKeeper.Free;
   inherited;
@@ -191,6 +207,9 @@ begin
 //  PhysicsTick(fCraftState, fScenario.Craft, fScenario.World, 1.0);
   PhysicsTick(fCraftState, fScenario.Craft, fScenario.World, 0.05);
 
+  // Update panel renderer with current state (after physics, before collision)
+  fPanelRenderer.UpdateState(fCraftState);
+
   // Transform hull vertices to world space for collision testing
   HullPoints := GetTransformedHull;
 
@@ -228,6 +247,8 @@ begin
 
       fOutcome.LivesRemaining := fScoreKeeper.Lives;
       fCraftState.Alive := False;
+      fPanelRenderer.CaptureSnapshot(fCraftState,
+        CalcAltitude(fCraftState.X, fCraftState.Y, fScenario.World));
       SetFinished(sidResult);
     end
     else
@@ -246,6 +267,8 @@ begin
       fOutcome.LivesRemaining := fScoreKeeper.Lives;
 
       fCraftState.Alive := False;
+      fPanelRenderer.CaptureSnapshot(fCraftState,
+        CalcAltitude(fCraftState.X, fCraftState.Y, fScenario.World));
       SetFinished(sidResult);
     end;
   end;
@@ -379,6 +402,11 @@ begin
     RenderPauseOverlay(aCanvas, aWidth, aHeight);
 end;
 
+procedure TPlayScene.RenderPanel(const aCanvas: ISkCanvas; aWidth, aHeight: Integer);
+begin
+  fPanelRenderer.RenderPanel(aCanvas, Single(aWidth), Single(aHeight));
+end;
+
 procedure TPlayScene.RenderPauseOverlay(const aCanvas: ISkCanvas; aWidth, aHeight: Integer);
 var
   Paint: ISkPaint;
@@ -419,6 +447,12 @@ end;
 function TPlayScene.RequiredLayout: TLayoutMode;
 begin
   Result := lmBottomPanel;
+end;
+
+function TPlayScene.DetachPanelRenderer: TPanelRenderer;
+begin
+  Result := fPanelRenderer;
+  fPanelRenderer := nil;
 end;
 
 end.

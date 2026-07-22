@@ -45,7 +45,7 @@ type
 
   // Instrument type identifiers for the control panel.
   TInstrumentKind = (ikFuelGauge, ikRCSGauge, ikVelocity, ikAltimeter,
-    ikAttitude, ikSASIndicator);
+    ikAttitude, ikSASIndicator, ikLandingGuidance);
 
   // Instrument descriptor for panel layout.
   TInstrument = record
@@ -55,6 +55,18 @@ type
   TInstrumentArray = array of TInstrument;
   TPadArray = array of TPad;
   TTerrainArray = array of TPointF;
+
+  // Snapshot of panel-relevant values for freeze behavior on Result scene.
+  TPanelState = record
+    Fuel: Single;
+    RCSFuel: Single;
+    VX: Single;
+    VY: Single;
+    Altitude: Single;
+    Angle: Single;
+    SASActive: Boolean;
+    Frozen: Boolean;
+  end;
 
   // A visual part of the craft hull. Drawn in array order (back to front).
   TCraftPart = record
@@ -108,6 +120,8 @@ type
     fPlumeColor: TAlphaColor;
     fHasSAS: Boolean;
     fHasThrottleControl: Boolean;
+    fPanelFontFamily: string;
+    fLandingCriteria: TLandingCriteria;
     fInstruments: TInstrumentArray;
     fCollisionPoints: TPointFArray;
   public
@@ -129,6 +143,8 @@ type
     property PlumeColor: TAlphaColor read fPlumeColor write fPlumeColor;
     property HasSAS: Boolean read fHasSAS write fHasSAS;
     property HasThrottleControl: Boolean read fHasThrottleControl write fHasThrottleControl;
+    property PanelFontFamily: string read fPanelFontFamily write fPanelFontFamily;
+    property LandingCriteria: TLandingCriteria read fLandingCriteria write fLandingCriteria;
     property Instruments: TInstrumentArray read fInstruments write fInstruments;
     property CollisionPoints: TPointFArray read fCollisionPoints write fCollisionPoints;
   end;

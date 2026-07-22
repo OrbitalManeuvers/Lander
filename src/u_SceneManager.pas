@@ -73,7 +73,7 @@ implementation
 uses
   System.IOUtils,
   u_MenuScene, u_PlayScene, u_ResultScene, u_EditorScene,
-  u_Serialization;
+  u_Serialization, u_PanelRenderer;
 
 { TSessionContext }
 
@@ -162,12 +162,18 @@ var
   Outcome: TPlayOutcome;
   Scenario: TScenario;
   EditorWorld: TWorldProfile;
+  PanelRend: TPanelRenderer;
 begin
+  PanelRend := nil;
+
   // --- Extract data from current scene before destroying it ---
 
-  // Play → Result: grab outcome
+  // Play → Result: grab outcome and panel renderer
   if (aSceneID = sidResult) and (fCurrentScene is TPlayScene) then
-    Outcome := TPlayScene(fCurrentScene).Outcome
+  begin
+    Outcome := TPlayScene(fCurrentScene).Outcome;
+    PanelRend := TPlayScene(fCurrentScene).DetachPanelRenderer;
+  end
   else
     Outcome := Default(TPlayOutcome);
 
@@ -231,7 +237,7 @@ begin
       end;
 
     sidResult:
-      fCurrentScene := TResultScene.Create(Outcome, fSession.ReturnScene);
+      fCurrentScene := TResultScene.Create(Outcome, fSession.ReturnScene, PanelRend);
 
     sidEditor:
       begin

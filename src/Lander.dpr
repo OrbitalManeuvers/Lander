@@ -17,7 +17,12 @@ uses
   u_PlayScene in 'u_PlayScene.pas',
   u_ResultScene in 'u_ResultScene.pas',
   u_EditorScene in 'u_EditorScene.pas',
-  u_TerrainFeatureGen in 'u_TerrainFeatureGen.pas';
+  u_TerrainFeatureGen in 'u_TerrainFeatureGen.pas',
+  u_FontManager in 'u_FontManager.pas',
+  u_PanelLayout in 'u_PanelLayout.pas',
+  u_PanelComputed in 'u_PanelComputed.pas',
+  u_WidgetPainters in 'u_WidgetPainters.pas',
+  u_PanelRenderer in 'u_PanelRenderer.pas';
 
 {$R *.res}
 
