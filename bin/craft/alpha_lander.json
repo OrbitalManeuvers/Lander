@@ -1,0 +1,80 @@
+{
+  "name": "Alpha Lander",
+  "pivot": { "x": 14, "y": 22.5 },
+  "hullParts": [
+    {
+      "points": [
+        { "x": 14, "y": 0 },
+        { "x": 26, "y": 18 },
+        { "x": 24, "y": 38 },
+        { "x": 4, "y": 38 },
+        { "x": 2, "y": 18 }
+      ],
+      "color": "FFC0C0C0",
+      "style": "stroke",
+      "strokeWidth": 1.8,
+      "closed": true
+    },
+    {
+      "points": [
+        { "x": 14, "y": 5 },
+        { "x": 19, "y": 16 },
+        { "x": 9, "y": 16 }
+      ],
+      "color": "FF4488CC",
+      "style": "fill",
+      "strokeWidth": 0,
+      "closed": true
+    },
+    {
+      "points": [
+        { "x": 4, "y": 38 },
+        { "x": 0, "y": 45 },
+        { "x": 6, "y": 45 }
+      ],
+      "color": "FF808080",
+      "style": "stroke",
+      "strokeWidth": 1.5,
+      "closed": false
+    },
+    {
+      "points": [
+        { "x": 24, "y": 38 },
+        { "x": 28, "y": 45 },
+        { "x": 22, "y": 45 }
+      ],
+      "color": "FF808080",
+      "style": "stroke",
+      "strokeWidth": 1.5,
+      "closed": false
+    }
+  ],
+  "thrustOffset": { "x": 14, "y": 40 },
+  "rcsOffsets": [
+    { "x": 0, "y": 20 },
+    { "x": 28, "y": 20 }
+  ],
+  "plumeLength": 16.0,
+  "plumeWidth": 6.0,
+  "rcsRadius": 4.0,
+  "plumeColor": "FFFF8800",
+  "mass": 1.0,
+  "thrustPower": 2.8,
+  "fuelCapacity": 100,
+  "burnRate": 0.3,
+  "rcsFuelCapacity": 50,
+  "rcsBurnRate": 0.2,
+  "rcsThrust": 0.5,
+  "hasSAS": true,
+  "hasThrottleControl": true,
+  "collisionPoints": [
+    { "x": 14, "y": 0 },
+    { "x": 26, "y": 18 },
+    { "x": 24, "y": 38 },
+    { "x": 28, "y": 45 },
+    { "x": 0, "y": 45 },
+    { "x": 4, "y": 38 },
+    { "x": 2, "y": 18 }
+  ],
+  "collisionClosed": true
+}

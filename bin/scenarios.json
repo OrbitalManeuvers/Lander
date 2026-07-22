@@ -1,0 +1,44 @@
+[
+  {
+    "name": "The Moon",
+    "description": "A gentle introduction. Large pad, calm conditions.",
+    "world": "the_moon.json",
+    "craft": "alpha_lander.json",
+    "lives": 3,
+    "start": {
+      "x": 0,
+      "y": 400,
+      "vx": 20.2,
+      "vy": 0,
+      "angle": -40
+    },
+    "criteria": {
+      "maxSpeed": 3.0,
+      "maxAngle": 15.0
+    }
+  },
+  {
+    "name": "Unknown Worlds",
+    "description": "Hostile terrain, tight margins.",
+    "world": "io.json",
+    "craft": "bubble_lander.json",
+    "lives": 3,
+    "start": {
+      "x": 0,
+      "y": 400,
+      "vx": 20.2,
+      "vy": 0,
+      "angle": -90
+    },
+    "criteria": {
+      "maxSpeed": 2.5,
+      "maxAngle": 10.0
+    }
+  },
+  null,
+  null,
+  null,
+  null,
+  null,
+  null
+]
