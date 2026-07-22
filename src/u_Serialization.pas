@@ -36,6 +36,9 @@ type
 procedure SaveWorldToJSON(aWorld: TWorldProfile; const aFilePath: string);
 function LoadWorldFromJSON(const aFilePath: string): TWorldProfile;
 
+// Standalone file I/O for craft profiles
+function LoadCraftFromJSON(const aFilePath: string): TCraftProfile;
+
 // Scenario manifest I/O (8-slot array, nulls for empty slots)
 function LoadScenariosFromJSON(const aFilePath: string): TArray<TScenario>;
 procedure SaveScenariosToJSON(const aScenarios: TArray<TScenario>; const aFilePath: string);
@@ -44,7 +47,7 @@ implementation
 
 uses
   System.SysUtils, System.IOUtils, System.Types, System.UITypes,
-  System.Generics.Collections;
+  System.Generics.Collections, System.Skia;
 
 const
   KEY_NAME = 'name';
@@ -63,6 +66,20 @@ const
   KEY_RCS_CAPACITY = 'rcsFuelCapacity';
   KEY_RCS_BURN_RATE = 'rcsBurnRate';
   KEY_RCS_THRUST = 'rcsThrust';
+
+  // Craft hull/collision keys
+  KEY_HULL_PARTS = 'hullParts';
+  KEY_POINTS = 'points';
+  KEY_COLOR = 'color';
+  KEY_STYLE = 'style';
+  KEY_STROKE_WIDTH = 'strokeWidth';
+  KEY_CLOSED = 'closed';
+  KEY_HAS_SAS = 'hasSAS';
+  KEY_HAS_THROTTLE = 'hasThrottleControl';
+  KEY_COLLISION_POINTS = 'collisionPoints';
+  KEY_COLLISION_CLOSED = 'collisionClosed';
+  KEY_PANEL_FONT = 'panelFontFamily';
+  KEY_INSTRUMENTS = 'instruments';
 
   // World JSON keys
   KEY_GRAVITY = 'gravity';
@@ -160,6 +177,22 @@ var
   json: TJSONObject;
 begin
   Result := TWorldProfile.Create;
+  content := TFile.ReadAllText(aFilePath, TEncoding.UTF8);
+  json := TJSONObject.ParseJSONValue(content) as TJSONObject;
+  try
+    if json <> nil then
+      Result.AsJSON := json;
+  finally
+    json.Free;
+  end;
+end;
+
+function LoadCraftFromJSON(const aFilePath: string): TCraftProfile;
+var
+  content: string;
+  json: TJSONObject;
+begin
+  Result := TCraftProfile.Create;
   content := TFile.ReadAllText(aFilePath, TEncoding.UTF8);
   json := TJSONObject.ParseJSONValue(content) as TJSONObject;
   try
@@ -321,16 +354,210 @@ end;
 
 procedure TCraftHelper.SetJSON(const Value: TJSONObject);
 var
-  jArr: TJSONArray;
+  pivotObj: TJSONObject;
+  pivot: TPointF;
+  hullArr, pointsArr, rcsArr, collArr, instrArr: TJSONArray;
+  partObj, ptObj: TJSONObject;
+  i, j: Integer;
+  parts: TCraftPartArray;
+  points: array of TPointF;
+  colorStr, styleStr: string;
+  closed: Boolean;
+  rcsOffsets, collPoints: TPointFArray;
+  instrKindStr: string;
+  instr: TInstrumentArray;
+  criteria: TLandingCriteria;
+  criteriaObj: TJSONObject;
 begin
   Self.Name := Value.StrValue(KEY_NAME);
 
+  // Pivot (needed for path building)
+  pivot := PointF(0, 0);
+  if Value.TryGetValue(KEY_PIVOT, pivotObj) then
+    pivot := PointF(pivotObj.FloatValue(KEY_X), pivotObj.FloatValue(KEY_Y));
 
-  if Value.TryGetValue(KEY_RCS_OFFSETS, jArr) then
-    Self.RCSOffsets.AsJSON := jArr;
+  // Hull parts
+  if Value.TryGetValue(KEY_HULL_PARTS, hullArr) then
+  begin
+    SetLength(parts, hullArr.Count);
+    for i := 0 to hullArr.Count - 1 do
+    begin
+      partObj := hullArr.Items[i] as TJSONObject;
 
-  //
+      // Parse points array
+      if partObj.TryGetValue(KEY_POINTS, pointsArr) then
+      begin
+        SetLength(points, pointsArr.Count);
+        for j := 0 to pointsArr.Count - 1 do
+        begin
+          ptObj := pointsArr.Items[j] as TJSONObject;
+          points[j] := PointF(ptObj.FloatValue(KEY_X), ptObj.FloatValue(KEY_Y));
+        end;
+      end
+      else
+        SetLength(points, 0);
 
+      // Closed flag
+      closed := True;
+      var closedVal: Boolean;
+      if partObj.TryGetValue(KEY_CLOSED, closedVal) then
+        closed := closedVal;
+
+      // Build path
+      parts[i].Path := BuildCraftPath(points, pivot, closed);
+
+      // Color (hex string without $ prefix)
+      colorStr := partObj.StrValue(KEY_COLOR);
+      if colorStr <> '' then
+        parts[i].Color := TAlphaColor(StrToUInt('$' + colorStr))
+      else
+        parts[i].Color := $FFC0C0C0;
+
+      // Style
+      styleStr := partObj.StrValue(KEY_STYLE);
+      if styleStr = 'fill' then
+        parts[i].Style := TSkPaintStyle.Fill
+      else if styleStr = 'strokeAndFill' then
+        parts[i].Style := TSkPaintStyle.StrokeAndFill
+      else
+        parts[i].Style := TSkPaintStyle.Stroke;
+
+      // Stroke width
+      parts[i].StrokeWidth := partObj.FloatValue(KEY_STROKE_WIDTH);
+    end;
+    Self.HullParts := parts;
+  end;
+
+  // Thrust offset (grid space, pivot-centered)
+  if Value.TryGetValue(KEY_THRUST_OFFSET, ptObj) then
+    Self.ThrustOffset := PivotOffset(
+      PointF(ptObj.FloatValue(KEY_X), ptObj.FloatValue(KEY_Y)), pivot);
+
+  // RCS offsets (grid space, pivot-centered)
+  if Value.TryGetValue(KEY_RCS_OFFSETS, rcsArr) then
+  begin
+    SetLength(rcsOffsets, rcsArr.Count);
+    for i := 0 to rcsArr.Count - 1 do
+    begin
+      ptObj := rcsArr.Items[i] as TJSONObject;
+      rcsOffsets[i] := PivotOffset(
+        PointF(ptObj.FloatValue(KEY_X), ptObj.FloatValue(KEY_Y)), pivot);
+    end;
+    Self.RCSOffsets := rcsOffsets;
+  end;
+
+  // Plume parameters
+  Self.PlumeLength := Value.FloatValue(KEY_PLUME_LENGTH);
+  Self.PlumeWidth := Value.FloatValue(KEY_PLUME_WIDTH);
+  Self.RCSRadius := Value.FloatValue(KEY_RCS_RADIUS);
+
+  // Plume color
+  colorStr := Value.StrValue(KEY_PLUME_COLOR);
+  if colorStr <> '' then
+    Self.PlumeColor := TAlphaColor(StrToUInt('$' + colorStr))
+  else
+    Self.PlumeColor := $FFFF8800;
+
+  // Physics
+  Self.Mass := Value.FloatValue(KEY_MASS);
+  Self.ThrustPower := Value.FloatValue(KEY_THRUST_POWER);
+  Self.FuelCapacity := Value.FloatValue(KEY_FUEL_CAPACITY);
+  Self.BurnRate := Value.FloatValue(KEY_BURN_RATE);
+  Self.RCSFuelCapacity := Value.FloatValue(KEY_RCS_CAPACITY);
+  Self.RCSBurnRate := Value.FloatValue(KEY_RCS_BURN_RATE);
+  Self.RCSThrust := Value.FloatValue(KEY_RCS_THRUST);
+
+  // Flags
+  var hasSASVal: Boolean;
+  if Value.TryGetValue(KEY_HAS_SAS, hasSASVal) then
+    Self.HasSAS := hasSASVal
+  else
+    Self.HasSAS := False;
+
+  var hasThrottleVal: Boolean;
+  if Value.TryGetValue(KEY_HAS_THROTTLE, hasThrottleVal) then
+    Self.HasThrottleControl := hasThrottleVal
+  else
+    Self.HasThrottleControl := True;
+
+  // Collision points (grid space, pivot-centered) and collision path
+  if Value.TryGetValue(KEY_COLLISION_POINTS, collArr) then
+  begin
+    SetLength(collPoints, collArr.Count);
+    SetLength(points, collArr.Count);
+    for i := 0 to collArr.Count - 1 do
+    begin
+      ptObj := collArr.Items[i] as TJSONObject;
+      points[i] := PointF(ptObj.FloatValue(KEY_X), ptObj.FloatValue(KEY_Y));
+      collPoints[i] := PivotOffset(points[i], pivot);
+    end;
+    Self.CollisionPoints := collPoints;
+
+    // Build collision path
+    closed := True;
+    var collClosedVal: Boolean;
+    if Value.TryGetValue(KEY_COLLISION_CLOSED, collClosedVal) then
+      closed := collClosedVal;
+    Self.CollisionPath := BuildCraftPath(points, pivot, closed);
+  end;
+
+  // Panel font family (optional)
+  Self.PanelFontFamily := Value.StrValue(KEY_PANEL_FONT);
+
+  // Landing criteria (optional — defaults to generous values)
+  if Value.TryGetValue(KEY_CRITERIA, criteriaObj) then
+  begin
+    criteria.MaxSpeed := criteriaObj.FloatValue(KEY_MAX_SPEED);
+    criteria.MaxAngle := criteriaObj.FloatValue(KEY_MAX_ANGLE);
+    Self.LandingCriteria := criteria;
+  end
+  else
+  begin
+    criteria.MaxSpeed := 3.0;
+    criteria.MaxAngle := 15.0;
+    Self.LandingCriteria := criteria;
+  end;
+
+  // Instruments array (optional — array of kind strings)
+  // If not present, default to a full instrument set
+  if Value.TryGetValue(KEY_INSTRUMENTS, instrArr) then
+  begin
+    SetLength(instr, instrArr.Count);
+    for i := 0 to instrArr.Count - 1 do
+    begin
+      instrKindStr := instrArr.Items[i].Value;
+      if instrKindStr = 'fuelGauge' then
+        instr[i].Kind := ikFuelGauge
+      else if instrKindStr = 'rcsGauge' then
+        instr[i].Kind := ikRCSGauge
+      else if instrKindStr = 'velocity' then
+        instr[i].Kind := ikVelocity
+      else if instrKindStr = 'altimeter' then
+        instr[i].Kind := ikAltimeter
+      else if instrKindStr = 'attitude' then
+        instr[i].Kind := ikAttitude
+      else if instrKindStr = 'sasIndicator' then
+        instr[i].Kind := ikSASIndicator
+      else if instrKindStr = 'landingGuidance' then
+        instr[i].Kind := ikLandingGuidance
+      else
+        instr[i].Kind := ikFuelGauge;  // fallback
+    end;
+    Self.Instruments := instr;
+  end
+  else
+  begin
+    // Default instrument set when not specified in JSON
+    SetLength(instr, 7);
+    instr[0].Kind := ikFuelGauge;
+    instr[1].Kind := ikRCSGauge;
+    instr[2].Kind := ikVelocity;
+    instr[3].Kind := ikAltimeter;
+    instr[4].Kind := ikAttitude;
+    instr[5].Kind := ikSASIndicator;
+    instr[6].Kind := ikLandingGuidance;
+    Self.Instruments := instr;
+  end;
 end;
 
 { TWorldHelper }

@@ -230,9 +230,18 @@ begin
           Scenario.World := LoadWorldFromJSON(
             TPath.Combine(TPath.Combine(ExtractFilePath(ParamStr(0)), 'worlds'),
               Scenario.WorldID));
-        // Craft: fall back to BuildDefault until craft JSON loading is ready
+        // Craft: load from JSON file in craft/ subfolder
         if Scenario.Craft = nil then
-          Scenario.Craft := TScenarioBuilder.BuildDefault.Craft;
+        begin
+          var CraftPath: string;
+          CraftPath := TPath.Combine(
+            TPath.Combine(ExtractFilePath(ParamStr(0)), 'craft'),
+            Scenario.CraftID);
+          if TFile.Exists(CraftPath) then
+            Scenario.Craft := LoadCraftFromJSON(CraftPath)
+          else
+            Scenario.Craft := TScenarioBuilder.BuildBubbleCraft;
+        end;
         fCurrentScene := TPlayScene.Create(Scenario, fSession.ReturnScene);
       end;
 

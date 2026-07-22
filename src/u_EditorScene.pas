@@ -23,8 +23,10 @@ type
     fStatusText: string;         // current status message for overlay
     fStatusTimer: Single;        // countdown timer to clear status text
     function CursorOverlapsPad: Boolean;
+    function FindOverlappingPad: Integer;  // Returns pad index or -1
     procedure PlaceFeature(aKind: TFeatureKind);
     procedure PlacePad;
+    procedure RemovePad(aPadIndex: Integer);
     procedure ScaleRelief(aFactor: Single);
     procedure InitFromWorld;
   public
@@ -226,7 +228,15 @@ begin
     begin
       fSelectedFeature := aKeyCode - Ord('0');
       if fSelectedFeature = 0 then
-        PlacePad
+      begin
+        // If cursor overlaps an existing pad, remove it; otherwise place a new one
+        var padIdx: Integer;
+        padIdx := FindOverlappingPad;
+        if padIdx >= 0 then
+          RemovePad(padIdx)
+        else
+          PlacePad;
+      end
       else
         PlaceFeature(TFeatureKind(fSelectedFeature - 1));
     end
@@ -276,6 +286,54 @@ begin
       Exit;
     end;
   end;
+end;
+
+function TEditorScene.FindOverlappingPad: Integer;
+var
+  startX, endX: Single;
+  padStartX, padEndX: Single;
+  i: Integer;
+begin
+  Result := -1;
+  startX := fCursor.GridX * 10.0;
+  endX := startX + fCursor.GridWidth * 10.0;
+
+  for i := 0 to High(fWorld.Pads) do
+  begin
+    if (fWorld.Pads[i].StartIndex < 0) or
+       (fWorld.Pads[i].EndIndex > High(fWorld.Terrain)) then
+      Continue;
+
+    padStartX := fWorld.Terrain[fWorld.Pads[i].StartIndex].X;
+    padEndX := fWorld.Terrain[fWorld.Pads[i].EndIndex].X;
+
+    if (startX < padEndX) and (endX > padStartX) then
+    begin
+      Result := i;
+      Exit;
+    end;
+  end;
+end;
+
+procedure TEditorScene.RemovePad(aPadIndex: Integer);
+var
+  pads: TPadArray;
+  i: Integer;
+begin
+  pads := fWorld.Pads;
+
+  // Remove the pad at aPadIndex by shifting remaining elements down
+  for i := aPadIndex to High(pads) - 1 do
+    pads[i] := pads[i + 1];
+  SetLength(pads, Length(pads) - 1);
+
+  fWorld.Pads := pads;
+
+  // Rebuild renderer cache (terrain unchanged, just pad coloring)
+  fRenderer.SetTerrain(fWorld.Terrain, fWorld.Pads);
+  fDirty := True;
+  fStatusText := 'PAD REMOVED';
+  fStatusTimer := 2.0;
 end;
 
 procedure TEditorScene.PlaceFeature(aKind: TFeatureKind);
