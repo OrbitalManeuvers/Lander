@@ -45,6 +45,9 @@ function ComputeTimeToBurn(aVY, aAltitude, aThrustPower, aMass,
   aGravity: Single): Single;
 var
   Decel: Single;
+  BurnDuration: Single;
+  BurnDistance: Single;
+  RemainingAlt: Single;
 begin
   // Unavailable: ascending or hovering (VY <= 0 means not descending)
   if aVY <= 0 then
@@ -64,8 +67,20 @@ begin
   if Decel <= 0 then
     Exit(-1);
 
-  // Time = velocity / deceleration
-  Result := aVY / Decel;
+  // How long the burn takes to zero velocity
+  BurnDuration := aVY / Decel;
+
+  // Distance consumed during the burn (average velocity * time)
+  BurnDistance := aVY * BurnDuration / 2;
+
+  // Remaining altitude margin above the burn start point
+  RemainingAlt := aAltitude - BurnDistance;
+
+  // Time until we must begin burning (at current descent rate)
+  if aVY > 0 then
+    Result := RemainingAlt / aVY
+  else
+    Exit(-1);
 
   // Clamp to max display value
   Result := Min(Result, 999.9);

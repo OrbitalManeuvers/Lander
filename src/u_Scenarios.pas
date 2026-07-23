@@ -6,6 +6,10 @@ uses
   System.Types, System.UITypes, System.Skia,
   u_Models;
 
+// If there aren't any json files where they belong, the default craft and world
+// live in here.
+
+// pick your poison:
 {.DEFINE BasicLander}
 {$DEFINE BubbleCraft}
 
@@ -59,7 +63,6 @@ begin
   Result.World := TWorldProfile.Create;
   Result.World.Name := 'The Moon';
   Result.World.Gravity := 0.7;
-  Result.World.Wind := 0;
   Result.World.TerrainColor := $FFB0B0B0;  // Light gray lunar surface
   Result.World.PadColor := $FF00E060;       // Bright green pads
 

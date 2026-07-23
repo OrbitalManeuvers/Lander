@@ -83,7 +83,6 @@ const
 
   // World JSON keys
   KEY_GRAVITY = 'gravity';
-  KEY_WIND = 'wind';
   KEY_TERRAIN_COLOR = 'terrainColor';
   KEY_PAD_COLOR = 'padColor';
   KEY_TERRAIN = 'terrain';
@@ -571,7 +570,6 @@ begin
   Result := TJSONObject.Create;
   Result.AddPair(KEY_NAME, Self.Name);
   Result.AddPair(KEY_GRAVITY, TJSONNumber.Create(Self.Gravity));
-  Result.AddPair(KEY_WIND, TJSONNumber.Create(Self.Wind));
   Result.AddPair(KEY_TERRAIN_COLOR, IntToHex(Self.TerrainColor, 8));
   Result.AddPair(KEY_PAD_COLOR, IntToHex(Self.PadColor, 8));
 
@@ -602,7 +600,6 @@ var
 begin
   Self.Name := Value.StrValue(KEY_NAME);
   Self.Gravity := Value.FloatValue(KEY_GRAVITY);
-  Self.Wind := Value.FloatValue(KEY_WIND);
 
   // Parse terrain color from hex string
   colorStr := Value.StrValue(KEY_TERRAIN_COLOR);

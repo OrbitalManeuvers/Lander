@@ -15,7 +15,6 @@ type
     fFont: ISkFont;
     fSmallFont: ISkFont;
     fTypeface: ISkTypeface;
-    fSlots: TArray<TSlot>;
     fPanelState: TPanelState;
     fCraftProfile: TCraftProfile;
     fWorldProfile: TWorldProfile;

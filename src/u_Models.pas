@@ -157,7 +157,6 @@ type
     FGravity: Single;
     FTerrain: TTerrainArray;
     FPads: TPadArray;
-    FWind: Single;
     FTerrainColor: TAlphaColor;
     FPadColor: TAlphaColor;
   public
@@ -165,7 +164,6 @@ type
     property Gravity: Single read FGravity write FGravity;
     property Terrain: TTerrainArray read FTerrain write FTerrain;
     property Pads: TPadArray read FPads write FPads;
-    property Wind: Single read FWind write FWind; // Optional, 0 for V1
     property TerrainColor: TAlphaColor read FTerrainColor write FTerrainColor;
     property PadColor: TAlphaColor read FPadColor write FPadColor;
   end;
