@@ -5,9 +5,11 @@ interface
 uses
   System.Types, System.UITypes, System.Skia, Winapi.Windows,
   u_Models, u_SceneBase, u_FlightRenderer, u_Scenarios, u_Scoring,
-  u_PanelRenderer, u_FontManager;
+  u_PanelRenderer, u_FontManager, u_Landing;
 
 type
+  TPlayPhase = (ppFlying, ppCrashAnim, ppCrashSummary);
+
   // Core gameplay scene: physics simulation, terrain rendering,
   // input handling, landing/crash detection.
   TPlayScene = class(TGameScene)
@@ -26,9 +28,10 @@ type
     fZoomedIn: Boolean;  // True = landing view, False = full terrain view
     fOutcome: TPlayOutcome;
     fReturnScene: TSceneID;  // Where to go on ESC (menu or editor)
+    fPlayPhase: TPlayPhase;
 
-    // Crash respawn state
-    fCrashTimer: Single;  // Countdown after crash before respawn (0 = not crashing)
+    // Crash flow state
+    fCrashPhaseTimer: Single;  // Time remaining in the crash animation phase
 
     // Pause state
     fPaused: Boolean;
@@ -37,6 +40,9 @@ type
     procedure InitCraftState;
     function GetTransformedHull: TPointFArray;
     procedure RenderPauseOverlay(const aCanvas: ISkCanvas; aWidth, aHeight: Integer);
+    procedure RenderCrashSummaryOverlay(const aCanvas: ISkCanvas; aWidth, aHeight: Integer);
+    procedure BeginCrashSequence(const aLanding: TLandingResult);
+    procedure ContinueAfterCrash;
   public
     constructor Create(const aScenario: TScenario; aReturnScene: TSceneID;
       aScoreKeeper: TScoreKeeper);
@@ -58,7 +64,7 @@ type
 implementation
 
 uses
-  System.SysUtils, System.Math, u_Physics, u_Terrain, u_Landing;
+  System.SysUtils, System.Math, u_Physics, u_Terrain;
 
 { TPlayScene }
 
@@ -72,7 +78,8 @@ begin
   fScoreKeeper := aScoreKeeper;  // Borrowed reference, not owned
   fTime := 0;
   fFlightTime := 0;
-  fCrashTimer := 0;
+  fPlayPhase := ppFlying;
+  fCrashPhaseTimer := 0;
 
   // Pre-build terrain paths for rendering
   fRenderer.SetTerrain(fScenario.World.Terrain, fScenario.World.Pads);
@@ -158,6 +165,21 @@ begin
     Exit;
   end;
 
+  if fPlayPhase = ppCrashSummary then
+  begin
+    if aKeyState <> ksDown then
+      Exit;
+
+    case aKeyCode of
+      VK_RETURN, VK_SPACE:
+        ContinueAfterCrash;
+    end;
+    Exit;
+  end;
+
+  if fPlayPhase <> ppFlying then
+    Exit;
+
   // Normal flight controls
   case aKeyCode of
     VK_ESCAPE:
@@ -204,31 +226,21 @@ begin
   if fPaused then
     Exit;
 
-  // Handle crash delay timer (craft is dead, waiting to respawn or game over)
-  if fCrashTimer > 0 then
+  if fPlayPhase = ppCrashAnim then
   begin
-    fCrashTimer := fCrashTimer - 0.05;
     fTime := fTime + 1.0;
-    if fCrashTimer <= 0 then
+    fCrashPhaseTimer := fCrashPhaseTimer - 0.05;
+    if fCrashPhaseTimer <= 0 then
     begin
-      fCrashTimer := 0;
-      if fScoreKeeper.IsGameOver then
-      begin
-        // No lives left — go to result scene
-        fPanelRenderer.UpdateChrome(fFlightTime, fScoreKeeper.Lives, fScoreKeeper.Score);
-        fPanelRenderer.CaptureSnapshot(fCraftState,
-          CalcAltitude(fCraftState.X, fCraftState.Y, fScenario.World));
-        SetFinished(sidResult);
-      end
-      else
-      begin
-        // Respawn: reset craft state, unfreeze panel, resume flight
-        InitCraftState;
-        fPanelRenderer.Unfreeze;
-        fZoomedIn := False;
-        fCameraX := fScenario.Start.X;
-      end;
+      fCrashPhaseTimer := 0;
+      fPlayPhase := ppCrashSummary;
     end;
+    Exit;
+  end;
+
+  if fPlayPhase = ppCrashSummary then
+  begin
+    fTime := fTime + 1.0;
     Exit;
   end;
 
@@ -290,24 +302,7 @@ begin
       SetFinished(sidResult);
     end
     else
-    begin
-      // Crash — decrement lives and start crash delay
-      fScoreKeeper.ApplyCrash;
-
-      fOutcome := Default(TPlayOutcome);
-      fOutcome.Success := False;
-      fOutcome.FailSpeed := Landing.FailSpeed;
-      fOutcome.FailAngle := Landing.FailAngle;
-      fOutcome.FailPad := Landing.FailPad;
-      fOutcome.PadPoints := 0;
-      fOutcome.FuelBonus := 0;
-      fOutcome.TotalScore := 0;
-      fOutcome.LivesRemaining := fScoreKeeper.Lives;
-
-      fCraftState.Alive := False;
-      fCrashTimer := 2.0;  // 2 second delay before respawn/game over
-      fPanelRenderer.UpdateChrome(fFlightTime, fScoreKeeper.Lives, fScoreKeeper.Score);
-    end;
+      BeginCrashSequence(Landing);
   end;
 end;
 
@@ -441,9 +436,11 @@ begin
     fScenario.Craft.PlumeWidth,
     fScenario.Craft.RCSRadius);
 
-  // Draw pause overlay on top of everything
+  // Draw gameplay overlays on top of everything.
   if fPaused then
-    RenderPauseOverlay(aCanvas, aWidth, aHeight);
+    RenderPauseOverlay(aCanvas, aWidth, aHeight)
+  else if fPlayPhase = ppCrashSummary then
+    RenderCrashSummaryOverlay(aCanvas, aWidth, aHeight);
 end;
 
 procedure TPlayScene.RenderPanel(const aCanvas: ISkCanvas; aWidth, aHeight: Integer);
@@ -486,6 +483,127 @@ begin
   Font.MeasureText('ESC = Exit    C = Continue', TextBounds, Paint);
   TextX := (aWidth - TextBounds.Width) / 2;
   aCanvas.DrawSimpleText('ESC = Exit    C = Continue', TextX, aHeight * 0.52, Font, Paint);
+end;
+
+procedure TPlayScene.RenderCrashSummaryOverlay(const aCanvas: ISkCanvas; aWidth, aHeight: Integer);
+var
+  Paint: ISkPaint;
+  Font: ISkFont;
+  Typeface: ISkTypeface;
+  TextBounds: TRectF;
+  TextX, TextY: Single;
+begin
+  Paint := TSkPaint.Create;
+  Paint.Style := TSkPaintStyle.Fill;
+  Paint.Color := $AA000000;
+  aCanvas.DrawRect(RectF(0, 0, aWidth, aHeight), Paint);
+
+  Typeface := TSkTypeface.MakeFromName('Consolas', TSkFontStyle.Bold);
+  Font := TSkFont.Create(Typeface, 40);
+  Paint := TSkPaint.Create;
+  Paint.Color := TAlphaColors.Red;
+  Paint.AntiAlias := True;
+
+  Font.MeasureText('CRASH!', TextBounds, Paint);
+  TextX := (aWidth - TextBounds.Width) / 2;
+  aCanvas.DrawSimpleText('CRASH!', TextX, aHeight * 0.34, Font, Paint);
+
+  Typeface := TSkTypeface.MakeFromName('Consolas', TSkFontStyle.Normal);
+  Font := TSkFont.Create(Typeface, 24);
+  Paint := TSkPaint.Create;
+  Paint.Color := TAlphaColors.White;
+  Paint.AntiAlias := True;
+  TextY := aHeight * 0.46;
+
+  if fOutcome.FailSpeed then
+  begin
+    Font.MeasureText('Too fast!', TextBounds, Paint);
+    TextX := (aWidth - TextBounds.Width) / 2;
+    aCanvas.DrawSimpleText('Too fast!', TextX, TextY, Font, Paint);
+    TextY := TextY + aHeight * 0.07;
+  end;
+
+  if fOutcome.FailAngle then
+  begin
+    Font.MeasureText('Bad angle!', TextBounds, Paint);
+    TextX := (aWidth - TextBounds.Width) / 2;
+    aCanvas.DrawSimpleText('Bad angle!', TextX, TextY, Font, Paint);
+    TextY := TextY + aHeight * 0.07;
+  end;
+
+  if fOutcome.FailPad then
+  begin
+    Font.MeasureText('Missed the pad!', TextBounds, Paint);
+    TextX := (aWidth - TextBounds.Width) / 2;
+    aCanvas.DrawSimpleText('Missed the pad!', TextX, TextY, Font, Paint);
+    TextY := TextY + aHeight * 0.07;
+  end;
+
+  if (not fOutcome.FailSpeed) and (not fOutcome.FailAngle) and (not fOutcome.FailPad) then
+  begin
+    Font.MeasureText('Mission Failed', TextBounds, Paint);
+    TextX := (aWidth - TextBounds.Width) / 2;
+    aCanvas.DrawSimpleText('Mission Failed', TextX, TextY, Font, Paint);
+    TextY := TextY + aHeight * 0.07;
+  end;
+
+  Font := TSkFont.Create(Typeface, 20);
+  Paint := TSkPaint.Create;
+  Paint.Color := $CCFFFFFF;
+  Paint.AntiAlias := True;
+
+  Font.MeasureText('Press ENTER to continue', TextBounds, Paint);
+  TextX := (aWidth - TextBounds.Width) / 2;
+  aCanvas.DrawSimpleText('Press ENTER to continue', TextX, TextY + aHeight * 0.06, Font, Paint);
+end;
+
+procedure TPlayScene.BeginCrashSequence(const aLanding: TLandingResult);
+const
+  CrashAnimDuration = 0.0;
+var
+  Altitude: Single;
+begin
+  fScoreKeeper.ApplyCrash;
+
+  fOutcome := Default(TPlayOutcome);
+  fOutcome.Success := False;
+  fOutcome.FailSpeed := aLanding.FailSpeed;
+  fOutcome.FailAngle := aLanding.FailAngle;
+  fOutcome.FailPad := aLanding.FailPad;
+  fOutcome.PadPoints := 0;
+  fOutcome.FuelBonus := 0;
+  fOutcome.TotalScore := 0;
+  fOutcome.LivesRemaining := fScoreKeeper.Lives;
+
+  fCraftState.Alive := False;
+  fCraftState.Thrust := 0;
+  fCraftState.RotatingLeft := False;
+  fCraftState.RotatingRight := False;
+
+  Altitude := CalcAltitude(fCraftState.X, fCraftState.Y, fScenario.World);
+  fPanelRenderer.UpdateChrome(fFlightTime, fScoreKeeper.Lives, fScoreKeeper.Score);
+  fPanelRenderer.CaptureSnapshot(fCraftState, Altitude);
+
+  fCrashPhaseTimer := CrashAnimDuration;
+  if fCrashPhaseTimer > 0 then
+    fPlayPhase := ppCrashAnim
+  else
+    fPlayPhase := ppCrashSummary;
+end;
+
+procedure TPlayScene.ContinueAfterCrash;
+begin
+  if fScoreKeeper.IsGameOver then
+    SetFinished(sidResult)
+  else
+  begin
+    InitCraftState;
+    fPanelRenderer.Unfreeze;
+    fZoomedIn := False;
+    fCameraX := fScenario.Start.X;
+    fPlayPhase := ppFlying;
+    fCrashPhaseTimer := 0;
+  end;
 end;
 
 function TPlayScene.RequiredLayout: TLayoutMode;
