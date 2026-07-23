@@ -249,7 +249,7 @@ begin
 
   // Increment time for starfield animation
   fTime := fTime + 1.0;
-  fFlightTime := fFlightTime + 0.05;
+  fFlightTime := fFlightTime + 0.016;
 
   // Run physics simulation (delta=1.0 since physics is per-tick)
 //  PhysicsTick(fCraftState, fScenario.Craft, fScenario.World, 1.0);
@@ -601,6 +601,7 @@ begin
     fPanelRenderer.Unfreeze;
     fZoomedIn := False;
     fCameraX := fScenario.Start.X;
+    fFlightTime := 0;
     fPlayPhase := ppFlying;
     fCrashPhaseTimer := 0;
   end;
